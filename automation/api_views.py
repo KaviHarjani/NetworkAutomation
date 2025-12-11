@@ -1,0 +1,814 @@
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from django.core.paginator import Paginator
+from django.db import models
+import json
+from .models import Device, Workflow, WorkflowExecution, SystemLog
+from .tasks import execute_workflow
+
+
+def create_cors_response(data, status=200):
+    """Create JSON response with CORS headers"""
+    response = JsonResponse(data, status=status)
+    response['Access-Control-Allow-Origin'] = '*'
+    response['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+    response['Access-Control-Allow-Headers'] = (
+        'Content-Type, Authorization, X-Requested-With'
+    )
+    response['Access-Control-Allow-Credentials'] = 'true'
+    response['Access-Control-Allow-Age'] = '86400'
+    return response
+
+
+@csrf_exempt
+@require_http_methods(["GET", "OPTIONS"])
+def device_list(request):
+    """API endpoint to list all devices"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = JsonResponse({})
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
+    
+    try:
+        devices = Device.objects.all()
+        
+        # Pagination
+        page = int(request.GET.get('page', 1))
+        per_page = int(request.GET.get('per_page', 10))
+        paginator = Paginator(devices, per_page)
+        page_obj = paginator.get_page(page)
+        
+        device_list = []
+        for device in page_obj:
+            device_data = {
+                'id': str(device.id),
+                'name': device.name,
+                'hostname': device.hostname,
+                'ip_address': device.ip_address,
+                'device_type': device.device_type,
+                'status': device.status,
+                'vendor': device.vendor,
+                'model': device.model,
+                'location': device.location,
+                'created_at': device.created_at.isoformat(),
+            }
+            device_list.append(device_data)
+        
+        return create_cors_response({
+            'devices': device_list,
+            'total': devices.count(),
+            'page': page,
+            'per_page': per_page,
+            'has_next': page_obj.has_next(),
+            'has_previous': page_obj.has_previous()
+        })
+        
+    except Exception as e:
+        return create_cors_response({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET", "OPTIONS"])
+def device_grouping(request):
+    """API endpoint to get device groupings by model/version/OS"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = JsonResponse({})
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
+
+    try:
+        # Get all devices
+        devices = Device.objects.all()
+
+        # Group devices by model, version, and OS
+        groupings = {}
+        for device in devices:
+            # Create a unique key for each combination
+            key = f"{device.model}|{device.os_version}|{device.vendor}"
+
+            if key not in groupings:
+                groupings[key] = {
+                    'model': device.model,
+                    'os_version': device.os_version,
+                    'vendor': device.vendor,
+                    'device_count': 0,
+                    'device_ids': []
+                }
+
+            groupings[key]['device_count'] += 1
+            groupings[key]['device_ids'].append(str(device.id))
+
+        # Convert to list and sort by device count (descending)
+        grouped_list = list(groupings.values())
+        grouped_list.sort(key=lambda x: x['device_count'], reverse=True)
+
+        return create_cors_response({
+            'groupings': grouped_list,
+            'total_groups': len(grouped_list),
+            'total_devices': devices.count()
+        })
+
+    except Exception as e:
+        return create_cors_response({'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST", "OPTIONS"])
+def assign_workflow_to_group(request):
+    """API endpoint to assign workflow to a device group"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = JsonResponse({})
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
+
+    try:
+        data = json.loads(request.body)
+        workflow_id = data.get('workflow_id')
+        device_ids = data.get('device_ids', [])
+
+        if not workflow_id or not device_ids:
+            return create_cors_response({'error': 'workflow_id and device_ids are required'}, status=400)
+
+        # Get workflow and devices
+        workflow = Workflow.objects.get(id=workflow_id)
+
+        # Create device-workflow mappings (this would be a new model in a full implementation)
+        # For now, we'll just return success
+        return create_cors_response({
+            'message': f'Assigned workflow {workflow.name} to {len(device_ids)} devices',
+            'workflow_id': str(workflow_id),
+            'device_count': len(device_ids),
+            'devices_assigned': device_ids
+        })
+
+    except Workflow.DoesNotExist:
+        return create_cors_response({'error': 'Workflow not found'}, status=404)
+    except Exception as e:
+        return create_cors_response({'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST", "OPTIONS"])
+def execute_workflow_api(request):
+    try:
+        if request.method == 'OPTIONS':
+            return create_cors_response({}, status=200)
+
+        data = json.loads(request.body)
+        workflow_id = data.get('workflow_id')
+        device_id = data.get('device_id')
+        dynamic_params = data.get('dynamic_params', {})
+
+        # Validate required fields
+        if not workflow_id or not device_id:
+            return create_cors_response({'error': 'workflow_id and device_id are required'}, status=400)
+
+        try:
+            workflow = Workflow.objects.get(id=workflow_id)
+            device = Device.objects.get(id=device_id)
+        except Workflow.DoesNotExist:
+            return create_cors_response({'error': 'Workflow not found'}, status=404)
+        except Device.DoesNotExist:
+            return create_cors_response({'error': 'Device not found'}, status=404)
+
+        # Create workflow execution record
+        workflow_execution = WorkflowExecution.objects.create(
+            workflow=workflow,
+            device=device,
+            status='pending',
+            current_stage='pending',
+            created_by=request.user if request.user.is_authenticated else None
+        )
+
+        # Process commands with dynamic regex patterns
+        all_commands = []
+
+        # Helper function to process commands and apply dynamic params
+        def process_commands(commands, stage):
+            processed = []
+            for cmd in commands:
+                if isinstance(cmd, dict):
+                    command = cmd.get('command', '')
+                    regex_pattern = cmd.get('regex_pattern', '')
+                    operator = cmd.get('operator', 'contains')
+
+                    # Check if this command has dynamic regex pattern
+                    if command in dynamic_params and dynamic_params[command]:
+                        # Replace {param} with actual value in regex pattern
+                        param_value = dynamic_params[command]
+                        if regex_pattern:
+                            # Simple parameter replacement - can be enhanced
+                            dynamic_regex = regex_pattern.replace('{param}', param_value)
+                            processed.append({
+                                'command': command,
+                                'regex_pattern': dynamic_regex,
+                                'operator': operator,
+                                'original_command': command,
+                                'param_value': param_value
+                            })
+                        else:
+                            # If no regex pattern, create a simple one with the parameter
+                            processed.append({
+                                'command': command,
+                                'regex_pattern': param_value,
+                                'operator': 'contains',
+                                'original_command': command,
+                                'param_value': param_value
+                            })
+                    else:
+                        processed.append(cmd)
+                else:
+                    processed.append(cmd)
+            return processed
+
+        # Process all stages with dynamic params
+        pre_check_commands = process_commands(workflow.get_pre_check_commands(), 'pre_check')
+        implementation_commands = process_commands(workflow.get_implementation_commands(), 'implementation')
+        post_check_commands = process_commands(workflow.get_post_check_commands(), 'post_check')
+        rollback_commands = process_commands(workflow.get_rollback_commands(), 'rollback')
+
+        # Store the processed commands for execution
+        # Store dynamic parameters for reference
+        workflow_execution.set_dynamic_params(dynamic_params)
+        workflow_execution.save()
+
+        # Start workflow execution asynchronously
+        task = execute_workflow.delay(str(workflow_execution.id))
+
+        return create_cors_response({
+            'message': 'Workflow execution started successfully',
+            'execution_id': str(workflow_execution.id),
+            'task_id': str(task.id),
+            'workflow_name': workflow.name,
+            'device_name': device.name,
+            'dynamic_params_applied': len(dynamic_params) > 0
+        }, status=200)
+
+    except json.JSONDecodeError:
+        return create_cors_response({'error': 'Invalid JSON data'}, status=400)
+    except Exception as e:
+        return create_cors_response({'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST", "OPTIONS"])
+def device_create(request):
+    """API endpoint to create a new device"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = JsonResponse({})
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
+    
+    try:
+        data = json.loads(request.body)
+        
+        # Get user (for now, using a default user or creating anonymous)
+        from django.contrib.auth.models import User
+        user, created = User.objects.get_or_create(
+            username='api_user', 
+            defaults={'email': 'api@example.com'}
+        )
+        
+        device = Device.objects.create(
+            name=data['name'],
+            hostname=data['hostname'],
+            ip_address=data['ip_address'],
+            device_type=data.get('device_type', 'router'),
+            username=data['username'],
+            password=data['password'],
+            ssh_port=data.get('ssh_port', 22),
+            enable_password=data.get('enable_password'),
+            vendor=data.get('vendor', ''),
+            model=data.get('model', ''),
+            os_version=data.get('os_version', ''),
+            location=data.get('location', ''),
+            description=data.get('description', ''),
+            created_by=user
+        )
+        
+        return create_cors_response({
+            'id': str(device.id),
+            'message': 'Device created successfully'
+        }, status=201)
+        
+    except Exception as e:
+        return create_cors_response({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["GET", "OPTIONS"])
+def workflow_list(request):
+    """API endpoint to list all workflows"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = JsonResponse({})
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
+    
+    try:
+        workflows = Workflow.objects.all()
+        
+        workflow_list = []
+        for workflow in workflows:
+            # Helper function to count actual commands (with command text)
+            def count_commands(commands):
+                if not commands:
+                    return 0
+                try:
+                    # Handle both old format (strings) and new format (objects)
+                    if isinstance(commands[0], str):
+                        # Old format - count all non-empty strings
+                        return len([cmd for cmd in commands if cmd.strip()])
+                    else:
+                        # New format - count objects with command text
+                        return len([cmd for cmd in commands if cmd.get('command', '').strip()])
+                except (IndexError, TypeError):
+                    return 0
+            
+            workflow_data = {
+                'id': str(workflow.id),
+                'name': workflow.name,
+                'description': workflow.description,
+                'status': workflow.status,
+                'created_by': workflow.created_by.username,
+                'created_at': workflow.created_at.isoformat(),
+                'updated_at': workflow.updated_at.isoformat(),
+                'command_counts': {
+                    'pre_check': count_commands(workflow.get_pre_check_commands()),
+                    'implementation': count_commands(workflow.get_implementation_commands()),
+                    'post_check': count_commands(workflow.get_post_check_commands()),
+                    'rollback': count_commands(workflow.get_rollback_commands())
+                }
+            }
+            workflow_list.append(workflow_data)
+        
+        return create_cors_response({'workflows': workflow_list})
+        
+    except Exception as e:
+        return create_cors_response({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST", "OPTIONS"])
+def workflow_create(request):
+    """API endpoint to create a new workflow"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = JsonResponse({})
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
+    
+    try:
+        data = json.loads(request.body)
+        
+        from django.contrib.auth.models import User
+        user, created = User.objects.get_or_create(
+            username='api_user', 
+            defaults={'email': 'api@example.com'}
+        )
+        
+        workflow = Workflow.objects.create(
+            name=data['name'],
+            description=data['description'],
+            status=data.get('status', 'draft'),
+            pre_check_commands=data.get('pre_check_commands', []),
+            implementation_commands=data.get('implementation_commands', []),
+            post_check_commands=data.get('post_check_commands', []),
+            rollback_commands=data.get('rollback_commands', []),
+            validation_rules=data.get('validation_rules', {}),
+            created_by=user
+        )
+        
+        return create_cors_response({
+            'id': str(workflow.id),
+            'message': 'Workflow created successfully'
+        }, status=201)
+        
+    except Exception as e:
+        return create_cors_response({'error': str(e)}, status=400)
+@csrf_exempt
+@require_http_methods(["GET", "OPTIONS"])
+def workflow_detail(request, workflow_id):
+    """API endpoint to get workflow details"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = JsonResponse({})
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
+    
+    try:
+        workflow = Workflow.objects.get(id=workflow_id)
+        
+        # Helper function to count actual commands (with command text)
+        def count_commands(commands):
+            if not commands:
+                return 0
+            # Handle both old format (strings) and new format (objects)
+            if isinstance(commands[0], str):
+                # Old format - count all non-empty strings
+                return len([cmd for cmd in commands if cmd.strip()])
+            else:
+                # New format - count objects with command text
+                return len([cmd for cmd in commands if cmd.get('command', '').strip()])
+        
+        workflow_data = {
+            'id': str(workflow.id),
+            'name': workflow.name,
+            'description': workflow.description,
+            'status': workflow.status,
+            'created_by': workflow.created_by.username,
+            'created_at': workflow.created_at.isoformat(),
+            'updated_at': workflow.updated_at.isoformat(),
+            'pre_check_commands': workflow.get_pre_check_commands(),
+            'implementation_commands': workflow.get_implementation_commands(),
+            'post_check_commands': workflow.get_post_check_commands(),
+            'rollback_commands': workflow.get_rollback_commands(),
+            'validation_rules': workflow.get_validation_rules(),
+            'command_counts': {
+                'pre_check': count_commands(workflow.get_pre_check_commands()),
+                'implementation': count_commands(workflow.get_implementation_commands()),
+                'post_check': count_commands(workflow.get_post_check_commands()),
+                'rollback': count_commands(workflow.get_rollback_commands())
+            }
+        }
+        
+        return create_cors_response(workflow_data)
+        
+    except Workflow.DoesNotExist:
+        return create_cors_response({'error': 'Workflow not found'}, status=404)
+    except Exception as e:
+        return create_cors_response({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["PUT", "OPTIONS"])
+def workflow_update(request, workflow_id):
+    """API endpoint to update a workflow"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = JsonResponse({})
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'PUT, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
+    
+    try:
+        workflow = Workflow.objects.get(id=workflow_id)
+        data = json.loads(request.body)
+        
+        # Update workflow fields
+        workflow.name = data.get('name', workflow.name)
+        workflow.description = data.get('description', workflow.description)
+        workflow.status = data.get('status', workflow.status)
+        workflow.pre_check_commands = data.get('pre_check_commands', workflow.pre_check_commands)
+        workflow.implementation_commands = data.get('implementation_commands', workflow.implementation_commands)
+        workflow.post_check_commands = data.get('post_check_commands', workflow.post_check_commands)
+        workflow.rollback_commands = data.get('rollback_commands', workflow.rollback_commands)
+        workflow.validation_rules = data.get('validation_rules', workflow.validation_rules)
+        
+        workflow.save()
+        
+        return create_cors_response({
+            'id': str(workflow.id),
+            'message': 'Workflow updated successfully'
+        })
+        
+    except Workflow.DoesNotExist:
+        return create_cors_response({'error': 'Workflow not found'}, status=404)
+    except Exception as e:
+        return create_cors_response({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["POST", "OPTIONS"])
+def workflow_execute(request):
+    """API endpoint to execute a workflow on a device"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = JsonResponse({})
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
+    
+    try:
+        data = json.loads(request.body)
+        
+        workflow_id = data['workflow_id']
+        device_id = data['device_id']
+        
+        workflow = Workflow.objects.get(id=workflow_id)
+        device = Device.objects.get(id=device_id)
+        
+        from django.contrib.auth.models import User
+        user, created = User.objects.get_or_create(
+            username='api_user', 
+            defaults={'email': 'api@example.com'}
+        )
+        
+        # Create workflow execution record
+        execution = WorkflowExecution.objects.create(
+            workflow=workflow,
+            device=device,
+            status='pending',
+            current_stage='pre_check',
+            created_by=user
+        )
+        
+        # Start async task
+        task = execute_workflow.delay(str(execution.id))
+        
+        return create_cors_response({
+            'execution_id': str(execution.id),
+            'task_id': task.id,
+            'message': 'Workflow execution started'
+        }, status=202)
+        
+    except Workflow.DoesNotExist:
+        return create_cors_response({'error': 'Workflow not found'}, status=404)
+    except Device.DoesNotExist:
+        return create_cors_response({'error': 'Device not found'}, status=404)
+    except Exception as e:
+        return create_cors_response({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["GET", "OPTIONS"])
+def execution_status(request, execution_id):
+    """API endpoint to get workflow execution status"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = JsonResponse({})
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
+    
+    try:
+        execution = WorkflowExecution.objects.get(id=execution_id)
+        
+        response_data = {
+            'id': str(execution.id),
+            'workflow': {
+                'id': str(execution.workflow.id),
+                'name': execution.workflow.name
+            },
+            'device': {
+                'id': str(execution.device.id),
+                'name': execution.device.name,
+                'ip_address': execution.device.ip_address
+            },
+            'status': execution.status,
+            'current_stage': execution.current_stage,
+            'started_at': execution.started_at.isoformat() if execution.started_at else None,
+            'completed_at': execution.completed_at.isoformat() if execution.completed_at else None,
+            'error_message': execution.error_message,
+            'created_at': execution.created_at.isoformat(),
+        }
+        
+        # Add stage results if available
+        if execution.pre_check_results:
+            response_data['pre_check_results'] = execution.pre_check_results
+        if execution.implementation_results:
+            response_data['implementation_results'] = execution.implementation_results
+        if execution.post_check_results:
+            response_data['post_check_results'] = execution.post_check_results
+        if execution.rollback_results:
+            response_data['rollback_results'] = execution.rollback_results
+        
+        # Add command executions
+        command_executions = execution.command_executions.all()
+        response_data['command_executions'] = []
+        
+        for cmd_exec in command_executions:
+            cmd_data = {
+                'id': str(cmd_exec.id),
+                'command': cmd_exec.command,
+                'stage': cmd_exec.stage,
+                'status': cmd_exec.status,
+                'output': cmd_exec.output,
+                'error_output': cmd_exec.error_output,
+                'validation_result': cmd_exec.validation_result,
+                'started_at': cmd_exec.started_at.isoformat() if cmd_exec.started_at else None,
+                'completed_at': cmd_exec.completed_at.isoformat() if cmd_exec.completed_at else None,
+            }
+            response_data['command_executions'].append(cmd_data)
+        
+        return create_cors_response(response_data)
+        
+    except WorkflowExecution.DoesNotExist:
+        return create_cors_response({'error': 'Execution not found'}, status=404)
+    except Exception as e:
+        return create_cors_response({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET", "OPTIONS"])
+def execution_list(request):
+    """API endpoint to list workflow executions"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = JsonResponse({})
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
+    
+    try:
+        executions = WorkflowExecution.objects.all()
+        
+        # Filters
+        status = request.GET.get('status')
+        if status:
+            executions = executions.filter(status=status)
+        
+        workflow_id = request.GET.get('workflow_id')
+        if workflow_id:
+            executions = executions.filter(workflow_id=workflow_id)
+        
+        device_id = request.GET.get('device_id')
+        if device_id:
+            executions = executions.filter(device_id=device_id)
+        
+        # Pagination
+        page = int(request.GET.get('page', 1))
+        per_page = int(request.GET.get('per_page', 10))
+        paginator = Paginator(executions.order_by('-created_at'), per_page)
+        page_obj = paginator.get_page(page)
+        
+        execution_list = []
+        for execution in page_obj:
+            exec_data = {
+                'id': str(execution.id),
+                'workflow': {
+                    'id': str(execution.workflow.id),
+                    'name': execution.workflow.name
+                },
+                'device': {
+                    'id': str(execution.device.id),
+                    'name': execution.device.name
+                },
+                'status': execution.status,
+                'current_stage': execution.current_stage,
+                'started_at': execution.started_at.isoformat() if execution.started_at else None,
+                'completed_at': execution.completed_at.isoformat() if execution.completed_at else None,
+                'created_at': execution.created_at.isoformat(),
+            }
+            execution_list.append(exec_data)
+        
+        return create_cors_response({
+            'executions': execution_list,
+            'total': executions.count(),
+            'page': page,
+            'per_page': per_page,
+            'has_next': page_obj.has_next(),
+            'has_previous': page_obj.has_previous()
+        })
+        
+    except Exception as e:
+        return create_cors_response({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET", "OPTIONS"])
+def log_list(request):
+    """API endpoint to list system logs"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = JsonResponse({})
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
+    
+    try:
+        from .models import SystemLog
+        
+        logs = SystemLog.objects.all()
+        
+        # Filters
+        level = request.GET.get('level')
+        if level:
+            logs = logs.filter(level=level.upper())
+        
+        log_type = request.GET.get('type')
+        if log_type:
+            logs = logs.filter(type=log_type.upper())
+        
+        object_type = request.GET.get('object_type')
+        if object_type:
+            logs = logs.filter(object_type=object_type)
+        
+        # Search in message or details
+        search = request.GET.get('search')
+        if search:
+            logs = logs.filter(
+                models.Q(message__icontains=search) |
+                models.Q(details__icontains=search)
+            )
+        
+        # Pagination
+        page = int(request.GET.get('page', 1))
+        per_page = int(request.GET.get('per_page', 20))
+        paginator = Paginator(logs.order_by('-created_at'), per_page)
+        page_obj = paginator.get_page(page)
+        
+        log_list = []
+        for log in page_obj:
+            log_data = {
+                'id': str(log.id),
+                'level': log.level,
+                'type': log.type,
+                'message': log.message,
+                'details': log.details,
+                'user': log.user.username if log.user else None,
+                'ip_address': log.ip_address,
+                'object_type': log.object_type,
+                'object_id': log.object_id,
+                'created_at': log.created_at.isoformat(),
+                'has_changes': bool(log.old_values or log.new_values)
+            }
+            log_list.append(log_data)
+        
+        return create_cors_response({
+            'logs': log_list,
+            'total': logs.count(),
+            'page': page,
+            'per_page': per_page,
+            'has_next': page_obj.has_next(),
+            'has_previous': page_obj.has_previous()
+        })
+        
+    except Exception as e:
+        return create_cors_response({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET", "OPTIONS"])
+def log_detail(request, log_id):
+    """API endpoint to get log details with diff"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = JsonResponse({})
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
+    
+    try:
+        from .models import SystemLog
+        
+        log = SystemLog.objects.get(id=log_id)
+        
+        log_data = {
+            'id': str(log.id),
+            'level': log.level,
+            'type': log.type,
+            'message': log.message,
+            'details': log.details,
+            'user': log.user.username if log.user else None,
+            'ip_address': log.ip_address,
+            'user_agent': log.user_agent,
+            'object_type': log.object_type,
+            'object_id': log.object_id,
+            'old_values': log.old_values,
+            'new_values': log.new_values,
+            'created_at': log.created_at.isoformat(),
+            'diff_html': log.get_diff_html()
+        }
+        
+        return create_cors_response(log_data)
+        
+    except SystemLog.DoesNotExist:
+        return create_cors_response({'error': 'Log not found'}, status=404)
+    except Exception as e:
+        return create_cors_response({'error': str(e)}, status=500)

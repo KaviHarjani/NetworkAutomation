@@ -1,0 +1,121 @@
+{% extends "swagger-ui.html" %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'swagger_custom.css' %}">
+    <style>
+        /* Additional inline styles for critical path */
+        .swagger-ui .topbar {
+            background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+        }
+
+        /* Modern font */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+        body, .swagger-ui {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        /* Custom logo */
+        .topbar-wrapper .link::before {
+            content: "🚀";
+            font-size: 1.5rem;
+            margin-right: 10px;
+        }
+    </style>
+{% endblock %}
+
+{% block extra_js %}
+    <script>
+        // Modern UI enhancements
+        document.addEventListener('DOMContentLoaded', function() {
+            // Add modern badges
+            const opblockTags = document.querySelectorAll('.opblock-tag');
+            opblockTags.forEach(tag => {
+                const title = tag.querySelector('.opblock-tag-section').textContent.trim();
+                let badgeText = '';
+                let badgeColor = '';
+
+                switch(title.toLowerCase()) {
+                    case 'devices':
+                        badgeText = '🖥️';
+                        badgeColor = '#3b82f6';
+                        break;
+                    case 'workflows':
+                        badgeText = '🔄';
+                        badgeColor = '#10b981';
+                        break;
+                    case 'executions':
+                        badgeText = '⚡';
+                        badgeColor = '#f59e0b';
+                        break;
+                    case 'logs':
+                        badgeText = '📝';
+                        badgeColor = '#8b5cf6';
+                        break;
+                    case 'auth':
+                        badgeText = '🔐';
+                        badgeColor = '#ef4444';
+                        break;
+                }
+
+                if (badgeText) {
+                    const badge = document.createElement('span');
+                    badge.textContent = badgeText;
+                    badge.style.backgroundColor = badgeColor;
+                    badge.style.color = 'white';
+                    badge.style.padding = '2px 8px';
+                    badge.style.borderRadius = '12px';
+                    badge.style.fontSize = '0.75rem';
+                    badge.style.marginLeft = '8px';
+                    tag.querySelector('.opblock-tag-section').appendChild(badge);
+                }
+            });
+
+            // Add smooth scrolling
+            document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+                anchor.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    const target = document.querySelector(this.getAttribute('href'));
+                    if (target) {
+                        target.scrollIntoView({
+                            behavior: 'smooth',
+                            block: 'start'
+                        });
+                    }
+                });
+            });
+
+            // Add tooltip functionality
+            const addTooltip = (element, text) => {
+                element.setAttribute('title', text);
+                element.style.position = 'relative';
+                element.style.cursor = 'help';
+            };
+
+            // Add tooltips to method badges
+            document.querySelectorAll('.opblock-summary-method').forEach(method => {
+                const methodText = method.textContent.trim();
+                let tooltipText = '';
+
+                switch(methodText) {
+                    case 'GET':
+                        tooltipText = 'Retrieve data';
+                        break;
+                    case 'POST':
+                        tooltipText = 'Create new resource';
+                        break;
+                    case 'PUT':
+                        tooltipText = 'Update existing resource';
+                        break;
+                    case 'DELETE':
+                        tooltipText = 'Delete resource';
+                        break;
+                }
+
+                if (tooltipText) {
+                    addTooltip(method, tooltipText);
+                }
+            });
+        });
+    </script>
+{% endblock %}

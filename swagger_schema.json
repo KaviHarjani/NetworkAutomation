@@ -1,0 +1,1091 @@
+openapi: 3.0.3
+info:
+  title: Network Automation API
+  version: 1.0.0
+  description: "\n    # Network Automation API Documentation\n    \n    This API provides\
+    \ endpoints for managing network devices, workflows, and automated configurations.\n\
+    \    \n    ## Authentication\n    \n    The API uses Django session authentication.\
+    \ Users must log in through the `/api/auth/login/` endpoint\n    to obtain a session\
+    \ cookie for authenticated requests.\n    \n    ## Features\n    \n    - **Device\
+    \ Management**: Create, update, and manage network devices\n    - **Workflow Management**:\
+    \ Define and manage automation workflows\n    - **Execution Tracking**: Monitor\
+    \ workflow execution status and results\n    - **System Logging**: View system\
+    \ activity and audit logs\n    \n    ## Rate Limiting\n    \n    API requests\
+    \ are rate-limited to prevent abuse. Contact your administrator for higher limits.\n\
+    \    "
+paths:
+  /devices/:
+    get:
+      operationId: devices_list
+      description: Retrieve a paginated list of all devices
+      summary: List Devices
+      parameters:
+      - in: query
+        name: page
+        schema:
+          type: integer
+        description: Page number
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+        description: Items per page
+      tags:
+      - devices
+      security:
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PaginatedDevice'
+          description: ''
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+    post:
+      operationId: devices_create
+      description: Create a new device
+      summary: Create Device
+      tags:
+      - devices
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DeviceRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DeviceRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /executions/:
+    get:
+      operationId: executions_list
+      description: Retrieve a paginated list of workflow executions
+      summary: List Executions
+      parameters:
+      - in: query
+        name: device_id
+        schema:
+          type: string
+        description: Filter by device ID
+      - in: query
+        name: page
+        schema:
+          type: integer
+        description: Page number
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+        description: Items per page
+      - in: query
+        name: status
+        schema:
+          type: string
+        description: Filter by status
+      - in: query
+        name: workflow_id
+        schema:
+          type: string
+        description: Filter by workflow ID
+      tags:
+      - executions
+      security:
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PaginatedExecution'
+          description: ''
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /executions/{id}/:
+    get:
+      operationId: executions_retrieve
+      description: Retrieve detailed information about a specific execution
+      summary: Get Execution Detail
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - executions
+      security:
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowExecution'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /executions/execute/:
+    post:
+      operationId: executions_execute_create
+      description: Start execution of a workflow on a device
+      summary: Execute Workflow
+      tags:
+      - executions
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowExecutionCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/WorkflowExecutionCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/WorkflowExecutionCreateRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      - {}
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowExecutionResponse'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /logs/:
+    get:
+      operationId: logs_list
+      description: Retrieve a paginated list of system logs with filtering
+      summary: List Logs
+      parameters:
+      - in: query
+        name: level
+        schema:
+          type: string
+        description: Filter by log level
+      - in: query
+        name: object_type
+        schema:
+          type: string
+        description: Filter by object type
+      - in: query
+        name: page
+        schema:
+          type: integer
+        description: Page number
+      - in: query
+        name: per_page
+        schema:
+          type: integer
+        description: Items per page
+      - in: query
+        name: search
+        schema:
+          type: string
+        description: Search in message or details
+      - in: query
+        name: type
+        schema:
+          type: string
+        description: Filter by log type
+      tags:
+      - logs
+      security:
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PaginatedLog'
+          description: ''
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /logs/{id}/:
+    get:
+      operationId: logs_retrieve
+      description: Retrieve detailed information about a specific log entry
+      summary: Get Log Detail
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - logs
+      security:
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemLog'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /workflows/:
+    get:
+      operationId: workflows_list
+      description: Retrieve a list of all workflows
+      summary: List Workflows
+      tags:
+      - workflows
+      security:
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Workflow'
+          description: ''
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+    post:
+      operationId: workflows_create
+      description: Create a new workflow
+      summary: Create Workflow
+      tags:
+      - workflows
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/WorkflowCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/WorkflowCreateRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowCreate'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /workflows/{id}/:
+    get:
+      operationId: workflows_retrieve
+      description: Retrieve detailed information about a specific workflow
+      summary: Get Workflow Detail
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - workflows
+      security:
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workflow'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+    put:
+      operationId: workflows_update
+      description: Update an existing workflow
+      summary: Update Workflow
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - workflows
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/WorkflowCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/WorkflowCreateRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowCreate'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+components:
+  schemas:
+    CommandExecution:
+      type: object
+      description: Serializer for CommandExecution model
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        command:
+          type: string
+        stage:
+          $ref: '#/components/schemas/StageEnum'
+        status:
+          $ref: '#/components/schemas/CommandExecutionStatusEnum'
+        output:
+          type: string
+        error_output:
+          type: string
+        validation_result:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+      required:
+      - command
+      - completed_at
+      - id
+      - stage
+      - started_at
+    CommandExecutionStatusEnum:
+      enum:
+      - pending
+      - running
+      - completed
+      - failed
+      type: string
+      description: |-
+        * `pending` - Pending
+        * `running` - Running
+        * `completed` - Completed
+        * `failed` - Failed
+    CurrentStageEnum:
+      enum:
+      - pre_check
+      - implementation
+      - post_check
+      - rollback
+      - completed
+      type: string
+      description: |-
+        * `pre_check` - Pre-Check
+        * `implementation` - Implementation
+        * `post_check` - Post-Check
+        * `rollback` - Rollback
+        * `completed` - Completed
+    Device:
+      type: object
+      description: Serializer for Device model
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 100
+        hostname:
+          type: string
+          maxLength: 255
+        ip_address:
+          type: string
+        device_type:
+          $ref: '#/components/schemas/DeviceTypeEnum'
+        status:
+          $ref: '#/components/schemas/DeviceStatusEnum'
+        ssh_port:
+          type: integer
+        vendor:
+          type: string
+          maxLength: 100
+        model:
+          type: string
+          maxLength: 100
+        os_version:
+          type: string
+          maxLength: 100
+        location:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+        created_by:
+          type: integer
+          readOnly: true
+        created_by_username:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - created_by
+      - created_by_username
+      - hostname
+      - id
+      - ip_address
+      - name
+      - updated_at
+    DeviceRequest:
+      type: object
+      description: Serializer for Device model
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        hostname:
+          type: string
+          minLength: 1
+          maxLength: 255
+        ip_address:
+          type: string
+          minLength: 1
+        device_type:
+          $ref: '#/components/schemas/DeviceTypeEnum'
+        status:
+          $ref: '#/components/schemas/DeviceStatusEnum'
+        ssh_port:
+          type: integer
+        vendor:
+          type: string
+          maxLength: 100
+        model:
+          type: string
+          maxLength: 100
+        os_version:
+          type: string
+          maxLength: 100
+        location:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+      required:
+      - hostname
+      - ip_address
+      - name
+    DeviceStatusEnum:
+      enum:
+      - online
+      - offline
+      - maintenance
+      - unknown
+      type: string
+      description: |-
+        * `online` - Online
+        * `offline` - Offline
+        * `maintenance` - Maintenance
+        * `unknown` - Unknown
+    DeviceTypeEnum:
+      enum:
+      - router
+      - switch
+      - firewall
+      - load_balancer
+      - server
+      - other
+      type: string
+      description: |-
+        * `router` - Router
+        * `switch` - Switch
+        * `firewall` - Firewall
+        * `load_balancer` - Load Balancer
+        * `server` - Server
+        * `other` - Other
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message describing what went wrong
+      required:
+      - error
+    LevelEnum:
+      enum:
+      - INFO
+      - WARNING
+      - ERROR
+      - DEBUG
+      - AUDIT
+      type: string
+      description: |-
+        * `INFO` - Info
+        * `WARNING` - Warning
+        * `ERROR` - Error
+        * `DEBUG` - Debug
+        * `AUDIT` - Audit
+    MessageResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          description: ID of the created/updated resource
+        message:
+          type: string
+          description: Success message
+      required:
+      - message
+    PaginatedDevice:
+      type: object
+      description: Serializer for paginated device responses
+      properties:
+        devices:
+          type: array
+          items:
+            $ref: '#/components/schemas/Device'
+        total:
+          type: integer
+        page:
+          type: integer
+        per_page:
+          type: integer
+        has_next:
+          type: boolean
+        has_previous:
+          type: boolean
+      required:
+      - devices
+      - has_next
+      - has_previous
+      - page
+      - per_page
+      - total
+    PaginatedExecution:
+      type: object
+      description: Serializer for paginated execution responses
+      properties:
+        executions:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowExecution'
+        total:
+          type: integer
+        page:
+          type: integer
+        per_page:
+          type: integer
+        has_next:
+          type: boolean
+        has_previous:
+          type: boolean
+      required:
+      - executions
+      - has_next
+      - has_previous
+      - page
+      - per_page
+      - total
+    PaginatedLog:
+      type: object
+      description: Serializer for paginated log responses
+      properties:
+        logs:
+          type: array
+          items:
+            $ref: '#/components/schemas/SystemLog'
+        total:
+          type: integer
+        page:
+          type: integer
+        per_page:
+          type: integer
+        has_next:
+          type: boolean
+        has_previous:
+          type: boolean
+      required:
+      - has_next
+      - has_previous
+      - logs
+      - page
+      - per_page
+      - total
+    PaginationInfo:
+      type: object
+      properties:
+        total:
+          type: integer
+          description: Total number of items available
+        page:
+          type: integer
+          description: Current page number
+        per_page:
+          type: integer
+          description: Number of items per page
+        has_next:
+          type: boolean
+          description: Whether there are more items on the next page
+        has_previous:
+          type: boolean
+          description: Whether there are items on the previous page
+      required:
+      - total
+      - page
+      - per_page
+      - has_next
+      - has_previous
+    StageEnum:
+      enum:
+      - pre_check
+      - implementation
+      - post_check
+      - rollback
+      type: string
+      description: |-
+        * `pre_check` - Pre-Check
+        * `implementation` - Implementation
+        * `post_check` - Post-Check
+        * `rollback` - Rollback
+    StatusBe2Enum:
+      enum:
+      - draft
+      - active
+      - paused
+      - archived
+      type: string
+      description: |-
+        * `draft` - Draft
+        * `active` - Active
+        * `paused` - Paused
+        * `archived` - Archived
+    SystemLog:
+      type: object
+      description: Serializer for SystemLog model
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        level:
+          $ref: '#/components/schemas/LevelEnum'
+        type:
+          $ref: '#/components/schemas/TypeEnum'
+        message:
+          type: string
+        details:
+          type: string
+        user:
+          type: integer
+          nullable: true
+        username:
+          type: string
+          readOnly: true
+        ip_address:
+          type: string
+          nullable: true
+        user_agent:
+          type: string
+        object_type:
+          type: string
+          maxLength: 50
+        object_id:
+          type: string
+          maxLength: 50
+        old_values:
+          type: string
+        new_values:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        diff_html:
+          type: string
+          readOnly: true
+      required:
+      - created_at
+      - diff_html
+      - id
+      - message
+      - username
+    TypeEnum:
+      enum:
+      - SYSTEM
+      - AUTHENTICATION
+      - DEVICE
+      - WORKFLOW
+      - CONFIGURATION
+      - TACACS
+      type: string
+      description: |-
+        * `SYSTEM` - System
+        * `AUTHENTICATION` - Authentication
+        * `DEVICE` - Device
+        * `WORKFLOW` - Workflow
+        * `CONFIGURATION` - Configuration
+        * `TACACS` - TACACS
+    Workflow:
+      type: object
+      description: Serializer for Workflow model
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 100
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/StatusBe2Enum'
+        pre_check_commands:
+          type: string
+        implementation_commands:
+          type: string
+        post_check_commands:
+          type: string
+        rollback_commands:
+          type: string
+        validation_rules:
+          type: string
+        created_by:
+          type: integer
+          readOnly: true
+        created_by_username:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        command_counts:
+          type: string
+          readOnly: true
+      required:
+      - command_counts
+      - created_at
+      - created_by
+      - created_by_username
+      - description
+      - id
+      - name
+      - updated_at
+    WorkflowCreate:
+      type: object
+      description: Serializer for creating Workflows
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 100
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/StatusBe2Enum'
+        pre_check_commands:
+          type: string
+        implementation_commands:
+          type: string
+        post_check_commands:
+          type: string
+        rollback_commands:
+          type: string
+        validation_rules:
+          type: string
+        created_by:
+          type: integer
+          readOnly: true
+        created_by_username:
+          type: string
+          readOnly: true
+      required:
+      - created_by
+      - created_by_username
+      - description
+      - id
+      - name
+    WorkflowCreateRequest:
+      type: object
+      description: Serializer for creating Workflows
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        description:
+          type: string
+          minLength: 1
+        status:
+          $ref: '#/components/schemas/StatusBe2Enum'
+        pre_check_commands:
+          type: string
+        implementation_commands:
+          type: string
+        post_check_commands:
+          type: string
+        rollback_commands:
+          type: string
+        validation_rules:
+          type: string
+      required:
+      - description
+      - name
+    WorkflowExecution:
+      type: object
+      description: Serializer for WorkflowExecution model
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        workflow:
+          type: string
+          format: uuid
+        workflow_name:
+          type: string
+          readOnly: true
+        device:
+          type: string
+          format: uuid
+        device_name:
+          type: string
+          readOnly: true
+        device_ip_address:
+          type: string
+          readOnly: true
+        status:
+          $ref: '#/components/schemas/WorkflowExecutionStatusEnum'
+        current_stage:
+          $ref: '#/components/schemas/CurrentStageEnum'
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        error_message:
+          type: string
+        pre_check_results:
+          type: string
+        implementation_results:
+          type: string
+        post_check_results:
+          type: string
+        rollback_results:
+          type: string
+        created_by:
+          type: integer
+        created_by_username:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        command_executions:
+          type: array
+          items:
+            $ref: '#/components/schemas/CommandExecution'
+          readOnly: true
+      required:
+      - command_executions
+      - created_at
+      - created_by
+      - created_by_username
+      - device
+      - device_ip_address
+      - device_name
+      - id
+      - workflow
+      - workflow_name
+    WorkflowExecutionCreateRequest:
+      type: object
+      description: Serializer for workflow execution request
+      properties:
+        workflow_id:
+          type: string
+          format: uuid
+        device_id:
+          type: string
+          format: uuid
+      required:
+      - device_id
+      - workflow_id
+    WorkflowExecutionResponse:
+      type: object
+      description: Serializer for workflow execution response
+      properties:
+        execution_id:
+          type: string
+          format: uuid
+        task_id:
+          type: string
+        message:
+          type: string
+      required:
+      - execution_id
+      - message
+      - task_id
+    WorkflowExecutionStatusEnum:
+      enum:
+      - pending
+      - running
+      - completed
+      - failed
+      - cancelled
+      - rolling_back
+      - rolled_back
+      type: string
+      description: |-
+        * `pending` - Pending
+        * `running` - Running
+        * `completed` - Completed
+        * `failed` - Failed
+        * `cancelled` - Cancelled
+        * `rolling_back` - Rolling Back
+        * `rolled_back` - Rolled Back
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: sessionid

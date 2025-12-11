@@ -1,0 +1,330 @@
+/* Modern Swagger UI Custom Styles */
+:root {
+    --primary-color: #3b82f6;
+    --primary-dark: #1d4ed8;
+    --secondary-color: #10b981;
+    --background-light: #f8fafc;
+    --background-dark: #ffffff;
+    --text-primary: #1e293b;
+    --text-secondary: #64748b;
+    --border-color: #e2e8f0;
+    --success-color: #10b981;
+    --warning-color: #f59e0b;
+    --error-color: #ef4444;
+    --code-bg: #f1f5f9;
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    --border-radius: 8px;
+}
+
+/* Base styles */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background-color: var(--background-light);
+    color: var(--text-primary);
+}
+
+/* Header styling */
+.swagger-ui .topbar {
+    background-color: var(--primary-color);
+    box-shadow: var(--shadow-sm);
+    border-bottom: 1px solid var(--primary-dark);
+}
+
+.swagger-ui .topbar .topbar-wrapper {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+.swagger-ui .topbar .link {
+    color: white !important;
+    font-weight: 600;
+    font-size: 1.1rem;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.swagger-ui .topbar .link img {
+    height: 24px;
+    width: 24px;
+}
+
+/* Main container */
+.swagger-ui .wrapper {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+/* Operation tags (sidebar) */
+.swagger-ui .opblock-tag {
+    background-color: var(--background-dark);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    margin-bottom: 10px;
+    box-shadow: var(--shadow-sm);
+    transition: all 0.2s ease;
+}
+
+.swagger-ui .opblock-tag:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
+}
+
+.swagger-ui .opblock-tag-section {
+    padding: 15px 20px;
+    font-weight: 600;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.swagger-ui .opblock-tag-section small {
+    background-color: var(--primary-color);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+/* Operation blocks */
+.swagger-ui .opblock {
+    background-color: var(--background-dark);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    margin-bottom: 20px;
+    box-shadow: var(--shadow-sm);
+    transition: all 0.2s ease;
+}
+
+.swagger-ui .opblock:hover {
+    box-shadow: var(--shadow-md);
+}
+
+.swagger-ui .opblock-summary {
+    padding: 15px 20px;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    border-radius: var(--border-radius) var(--border-radius) 0 0;
+}
+
+.swagger-ui .opblock-summary-method {
+    background-color: var(--primary-color);
+    color: white;
+    padding: 5px 12px;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 0.85rem;
+}
+
+.swagger-ui .opblock-summary-path {
+    font-weight: 500;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+}
+
+.swagger-ui .opblock-summary-description {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    margin-top: 5px;
+}
+
+/* Response sections */
+.swagger-ui .opblock-section-header {
+    background-color: var(--code-bg);
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border-color);
+    font-weight: 600;
+    color: var(--text-primary);
+    border-radius: 0;
+}
+
+.swagger-ui .response-col_status {
+    background-color: var(--success-color);
+    color: white;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-weight: 500;
+    font-size: 0.8rem;
+}
+
+.swagger-ui .response-col_headers {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.8rem;
+    background-color: var(--code-bg);
+    padding: 5px;
+    border-radius: 4px;
+    color: var(--text-secondary);
+}
+
+/* Code blocks */
+.swagger-ui .highlight-code {
+    background-color: var(--code-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: 15px;
+    font-family: 'Fira Code', 'Courier New', Courier, monospace;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    overflow-x: auto;
+}
+
+.swagger-ui .json {
+    color: var(--text-primary);
+}
+
+/* Model sections */
+.swagger-ui .model-box {
+    background-color: var(--background-dark);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: 15px;
+    margin-bottom: 15px;
+    box-shadow: var(--shadow-sm);
+}
+
+.swagger-ui .model-box-control {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.swagger-ui .model-title {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+}
+
+.swagger-ui .model-toggle {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 5px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+}
+
+.swagger-ui .model-toggle:hover {
+    background-color: var(--primary-dark);
+}
+
+/* Parameters */
+.swagger-ui .parameters-col_description {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.swagger-ui .parameter__name {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.swagger-ui .parameter__type {
+    background-color: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+/* Try it out button */
+.swagger-ui .btn.try-out {
+    background-color: var(--secondary-color);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: var(--border-radius);
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.swagger-ui .btn.try-out:hover {
+    background-color: #059669;
+    transform: translateY(-1px);
+}
+
+.swagger-ui .btn.cancel {
+    background-color: var(--error-color);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: var(--border-radius);
+    font-weight: 500;
+}
+
+.swagger-ui .btn.execute {
+    background-color: var(--success-color);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: var(--border-radius);
+    font-weight: 500;
+}
+
+/* Input fields */
+.swagger-ui .parameter__input {
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: 8px 12px;
+    font-size: 0.85rem;
+    width: 100%;
+    transition: border-color 0.2s ease;
+}
+
+.swagger-ui .parameter__input:focus {
+    border-color: var(--primary-color);
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+/* Responsive improvements */
+@media (max-width: 768px) {
+    .swagger-ui .wrapper {
+        padding: 10px;
+    }
+
+    .swagger-ui .opblock {
+        margin-bottom: 15px;
+    }
+
+    .swagger-ui .opblock-summary {
+        padding: 12px 15px;
+    }
+}
+
+/* Animation for interactive elements */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.swagger-ui .opblock, .swagger-ui .model-box {
+    animation: fadeIn 0.3s ease-out;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--background-light);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--primary-color);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--primary-dark);
+}
