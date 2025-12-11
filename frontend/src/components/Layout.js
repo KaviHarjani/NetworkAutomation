@@ -12,6 +12,7 @@ import {
   UserCircleIcon,
   DocumentTextIcon,
   RectangleStackIcon,
+  BellIcon,
 } from '@heroicons/react/24/outline';
 
 const Layout = ({ children }) => {
@@ -27,6 +28,7 @@ const Layout = ({ children }) => {
     { name: 'Executions', href: '/executions', icon: PlayIcon },
     { name: 'Device Mapping', href: '/device-mapping', icon: RectangleStackIcon },
     { name: 'Logs', href: '/logs', icon: DocumentTextIcon },
+    { name: 'Webhooks', href: '/webhooks', icon: BellIcon },
   ];
 
   const handleLogout = async () => {

@@ -3,7 +3,7 @@ import json
 import logging
 from django.conf import settings
 from django.utils import timezone
-from .models import SystemLog, WorkflowExecution
+from .models import SystemLog, WorkflowExecution, WebhookConfiguration
 
 logger = logging.getLogger(__name__)
 
@@ -22,13 +22,47 @@ class WebhookManager:
             event_type: Type of event (execution_completed, execution_failed, etc.)
         """
         try:
-            # Get webhook URL from settings
-            webhook_url = getattr(settings, 'WORKFLOW_WEBHOOK_URL', None)
+            # Get all active webhook configurations that should trigger on this event
+            webhook_configs = WebhookConfiguration.objects.filter(is_active=True)
 
-            if not webhook_url:
-                logger.info("No webhook URL configured, skipping notification")
+            if not webhook_configs:
+                logger.info("No active webhook configurations found, skipping notification")
                 return False
 
+            # Filter webhooks that should trigger for this event
+            webhooks_to_trigger = []
+            for config in webhook_configs:
+                events = config.get_events_list()
+                if event_type in events:
+                    webhooks_to_trigger.append(config)
+
+            if not webhooks_to_trigger:
+                logger.info(f"No webhook configurations found for event {event_type}, skipping notification")
+                return False
+
+            # Send webhook to all matching configurations
+            success_count = 0
+            for config in webhooks_to_trigger:
+                try:
+                    webhook_success = WebhookManager._send_single_webhook(config, workflow_execution, event_type)
+                    if webhook_success:
+                        success_count += 1
+                except Exception as e:
+                    logger.error(f"Failed to send webhook for configuration {config.name}: {e}")
+                    continue
+
+            return success_count > 0
+
+        except Exception as e:
+            logger.error(f"Error in webhook notification process: {e}")
+            return False
+
+    @staticmethod
+    def _send_single_webhook(config, workflow_execution, event_type):
+        """
+        Send a single webhook notification to a specific configuration
+        """
+        try:
             # Prepare payload
             payload = WebhookManager._prepare_payload(workflow_execution, event_type)
 
@@ -40,15 +74,19 @@ class WebhookManager:
                 'X-Timestamp': timezone.now().isoformat()
             }
 
+            # Add secret key if configured
+            if config.secret_key:
+                headers['X-Webhook-Secret'] = config.secret_key
+
             response = requests.post(
-                webhook_url,
+                config.webhook_url,
                 data=json.dumps(payload),
                 headers=headers,
                 timeout=10  # 10 second timeout
             )
 
             # Log webhook response
-            logger.info(f"Webhook sent to {webhook_url}")
+            logger.info(f"Webhook sent to {config.webhook_url}")
             logger.info(f"Response status: {response.status_code}")
             logger.info(f"Response: {response.text}")
 
@@ -56,37 +94,39 @@ class WebhookManager:
             SystemLog.objects.create(
                 level='INFO',
                 type='WEBHOOK',
-                message=f"Webhook notification sent for {event_type}",
+                message=f"Webhook notification sent for {event_type} to {config.name}",
                 details=json.dumps({
+                    'webhook_config_id': str(config.id),
                     'workflow_execution_id': str(workflow_execution.id),
                     'status_code': response.status_code,
                     'response': response.text[:500]  # Limit response length
                 }),
-                object_type='WorkflowExecution',
-                object_id=str(workflow_execution.id)
+                object_type='WebhookConfiguration',
+                object_id=str(config.id)
             )
 
             return response.status_code == 200
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"Webhook delivery failed: {e}")
+            logger.error(f"Webhook delivery failed for {config.name}: {e}")
 
             # Log error
             SystemLog.objects.create(
                 level='ERROR',
                 type='WEBHOOK',
-                message=f"Webhook delivery failed: {str(e)}",
+                message=f"Webhook delivery failed for {config.name}: {str(e)}",
                 details=json.dumps({
+                    'webhook_config_id': str(config.id),
                     'workflow_execution_id': str(workflow_execution.id),
                     'error': str(e)
                 }),
-                object_type='WorkflowExecution',
-                object_id=str(workflow_execution.id)
+                object_type='WebhookConfiguration',
+                object_id=str(config.id)
             )
 
             return False
         except Exception as e:
-            logger.error(f"Webhook error: {e}")
+            logger.error(f"Webhook error for {config.name}: {e}")
             return False
 
     @staticmethod

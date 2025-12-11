@@ -1,7 +1,11 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from . import api_auth_views
-from .api_views import device_grouping, assign_workflow_to_group, execute_workflow_api
+from . import api_auth_views, api_views
+from .api_views import (
+    device_grouping,
+    assign_workflow_to_group,
+    execute_workflow_api
+)
 from .api_viewsets import (
     DeviceViewSet, WorkflowViewSet, ExecutionViewSet, LogViewSet
 )
@@ -27,6 +31,27 @@ urlpatterns = [
     path('auth/user/', api_auth_views.api_user, name='api_user'),
     # Device grouping and mapping endpoints
     path('devices/groupings/', device_grouping, name='device_groupings'),
-    path('devices/assign-workflow/', assign_workflow_to_group, name='assign_workflow_to_group'),
+    path('devices/assign-workflow/',
+         assign_workflow_to_group,
+         name='assign_workflow_to_group'),
     path('executions/execute/', execute_workflow_api, name='execute_workflow'),
+    # Webhook endpoints
+    path('webhooks/',
+         api_views.webhook_list,
+         name='webhook_list'),
+    path('webhooks/create/',
+         api_views.webhook_create,
+         name='webhook_create'),
+    path('webhooks/<str:webhook_id>/',
+         api_views.webhook_detail,
+         name='webhook_detail'),
+    path('webhooks/<str:webhook_id>/update/',
+         api_views.webhook_update,
+         name='webhook_update'),
+    path('webhooks/<str:webhook_id>/delete/',
+         api_views.webhook_delete,
+         name='webhook_delete'),
+    path('webhooks/<str:webhook_id>/test/',
+         api_views.webhook_test,
+         name='webhook_test'),
 ]

@@ -176,4 +176,25 @@ export const logsAPI = {
     api.get(`/api/logs/${logId}/`),
 };
 
+
+// Webhook API
+export const webhookAPI = {
+  getWebhooks: () =>
+    api.get('/api/webhooks/'),
+
+  createWebhook: (webhookData) =>
+    api.post('/api/webhooks/create/', webhookData),
+
+  updateWebhook: (webhookId, webhookData) =>
+    api.put(`/api/webhooks/${webhookId}/update/`, webhookData),
+
+  deleteWebhook: (webhookId) =>
+    api.delete(`/api/webhooks/${webhookId}/delete/`),
+
+  getWebhook: (webhookId) =>
+    api.get(`/api/webhooks/${webhookId}/`),
+
+  testWebhook: (webhookId) =>
+    api.post(`/api/webhooks/${webhookId}/test/`),
+};
 export default api;

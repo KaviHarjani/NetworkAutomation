@@ -18,6 +18,7 @@ import WorkflowView from './pages/WorkflowView';
 import WorkflowEdit from './pages/WorkflowEdit';
 import Logs from './pages/Logs';
 import DeviceMapping from './pages/DeviceMapping';
+import WebhookConfigurations from './pages/WebhookConfigurations';
 
 // Context
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -93,6 +94,7 @@ function AppRoutes() {
         <Route path="/executions/:id" element={<ExecutionDetail />} />
         <Route path="/logs" element={<Logs />} />
         <Route path="/device-mapping" element={<DeviceMapping />} />
+        <Route path="/webhooks" element={<WebhookConfigurations />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </Layout>

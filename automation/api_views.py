@@ -4,8 +4,9 @@ from django.views.decorators.http import require_http_methods
 from django.core.paginator import Paginator
 from django.db import models
 import json
-from .models import Device, Workflow, WorkflowExecution, SystemLog
+from .models import Device, Workflow, WorkflowExecution, SystemLog, WebhookConfiguration
 from .tasks import execute_workflow
+from .webhook_utils import WebhookManager
 
 
 def create_cors_response(data, status=200):
@@ -810,5 +811,216 @@ def log_detail(request, log_id):
         
     except SystemLog.DoesNotExist:
         return create_cors_response({'error': 'Log not found'}, status=404)
+    except Exception as e:
+        return create_cors_response({'error': str(e)}, status=500)
+
+# Webhook Configuration API
+@csrf_exempt
+@require_http_methods(["GET", "OPTIONS"])
+def webhook_list(request):
+    """API endpoint to list all webhook configurations"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = JsonResponse({})
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
+
+    try:
+        webhooks = WebhookConfiguration.objects.all()
+
+        webhook_list = []
+        for webhook in webhooks:
+            webhook_data = {
+                'id': str(webhook.id),
+                'name': webhook.name,
+                'description': webhook.description,
+                'webhook_url': webhook.webhook_url,
+                'events': webhook.events,
+                'method': webhook.method,
+                'is_active': webhook.is_active,
+                'secret_key': webhook.secret_key,
+                'created_by': webhook.created_by.username,
+                'created_at': webhook.created_at.isoformat(),
+                'updated_at': webhook.updated_at.isoformat(),
+            }
+            webhook_list.append(webhook_data)
+
+        return create_cors_response({'webhooks': webhook_list})
+
+    except Exception as e:
+        return create_cors_response({'error': str(e)}, status=500)
+
+# Webhook Configuration API
+@csrf_exempt
+@require_http_methods(["POST", "OPTIONS"])
+def webhook_create(request):
+    """API endpoint to create a new webhook configuration"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = JsonResponse({})
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
+
+    try:
+        data = json.loads(request.body)
+
+        from django.contrib.auth.models import User
+        user, created = User.objects.get_or_create(
+            username='api_user',
+            defaults={'email': 'api@example.com'}
+        )
+
+        webhook = WebhookConfiguration.objects.create(
+            name=data['name'],
+            description=data.get('description', ''),
+            webhook_url=data['webhook_url'],
+            events=data.get('events', 'execution_completed'),
+            method=data.get('method', 'POST'),
+            is_active=data.get('is_active', True),
+            secret_key=data.get('secret_key', ''),
+            created_by=user
+        )
+
+        return create_cors_response({
+            'id': str(webhook.id),
+            'message': 'Webhook configuration created successfully'
+        }, status=201)
+
+    except Exception as e:
+        return create_cors_response({'error': str(e)}, status=400)
+
+@csrf_exempt
+@require_http_methods(["GET", "OPTIONS"])
+def webhook_detail(request, webhook_id):
+    """API endpoint to get webhook configuration details"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = JsonResponse({})
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
+
+    try:
+        webhook = WebhookConfiguration.objects.get(id=webhook_id)
+
+        webhook_data = {
+            'id': str(webhook.id),
+            'name': webhook.name,
+            'description': webhook.description,
+            'webhook_url': webhook.webhook_url,
+            'events': webhook.events,
+            'method': webhook.method,
+            'is_active': webhook.is_active,
+            'secret_key': webhook.secret_key,
+            'created_by': webhook.created_by.username,
+            'created_at': webhook.created_at.isoformat(),
+            'updated_at': webhook.updated_at.isoformat(),
+        }
+
+        return create_cors_response(webhook_data)
+
+    except WebhookConfiguration.DoesNotExist:
+        return create_cors_response({'error': 'Webhook configuration not found'}, status=404)
+    except Exception as e:
+        return create_cors_response({'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["PUT", "OPTIONS"])
+def webhook_update(request, webhook_id):
+    """API endpoint to update a webhook configuration"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = JsonResponse({})
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'PUT, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
+
+    try:
+        webhook = WebhookConfiguration.objects.get(id=webhook_id)
+        data = json.loads(request.body)
+
+        # Update webhook fields
+        webhook.name = data.get('name', webhook.name)
+        webhook.description = data.get('description', webhook.description)
+        webhook.webhook_url = data.get('webhook_url', webhook.webhook_url)
+        webhook.events = data.get('events', webhook.events)
+        webhook.method = data.get('method', webhook.method)
+        webhook.is_active = data.get('is_active', webhook.is_active)
+        webhook.secret_key = data.get('secret_key', webhook.secret_key)
+
+        webhook.save()
+
+        return create_cors_response({
+            'id': str(webhook.id),
+            'message': 'Webhook configuration updated successfully'
+        })
+
+    except WebhookConfiguration.DoesNotExist:
+        return create_cors_response({'error': 'Webhook configuration not found'}, status=404)
+    except Exception as e:
+        return create_cors_response({'error': str(e)}, status=400)
+
+@csrf_exempt
+@require_http_methods(["DELETE", "OPTIONS"])
+def webhook_delete(request, webhook_id):
+    """API endpoint to delete a webhook configuration"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = JsonResponse({})
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'DELETE, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
+
+    try:
+        webhook = WebhookConfiguration.objects.get(id=webhook_id)
+        webhook.delete()
+
+        return create_cors_response({
+            'message': 'Webhook configuration deleted successfully'
+        })
+
+    except WebhookConfiguration.DoesNotExist:
+        return create_cors_response({'error': 'Webhook configuration not found'}, status=404)
+    except Exception as e:
+        return create_cors_response({'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST", "OPTIONS"])
+def webhook_test(request, webhook_id):
+    """API endpoint to test a webhook configuration"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = JsonResponse({})
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
+
+    try:
+        webhook = WebhookConfiguration.objects.get(id=webhook_id)
+
+        # Send test webhook
+        success, message = WebhookManager.send_test_webhook()
+
+        return create_cors_response({
+            'success': success,
+            'message': message
+        })
+
+    except WebhookConfiguration.DoesNotExist:
+        return create_cors_response({'error': 'Webhook configuration not found'}, status=404)
     except Exception as e:
         return create_cors_response({'error': str(e)}, status=500)

@@ -24,6 +24,9 @@ def execute_workflow(self, workflow_execution_id):
         workflow_execution.status = 'running'
         workflow_execution.started_at = timezone.now()
         workflow_execution.save()
+
+        # Send webhook notification for execution started
+        WebhookManager.send_webhook_notification(workflow_execution, 'execution_started')
         
         # Execute pre-check stage
         self.update_state(state='PROGRESS', meta={'stage': 'Pre-Check', 'progress': 10})
