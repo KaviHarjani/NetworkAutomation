@@ -402,3 +402,37 @@ class WebhookConfiguration(models.Model):
         if self.events == 'all_events':
             return ['execution_completed', 'execution_failed', 'execution_started']
         return [self.events]
+
+
+class WorkflowVariable(models.Model):
+    """Model for storing workflow variables that can be referenced in commands"""
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    workflow_execution = models.ForeignKey(WorkflowExecution, on_delete=models.CASCADE, related_name='variables')
+    name = models.CharField(max_length=100, help_text="Variable name (e.g., 'interface_name', 'vlan_id')")
+    value = models.TextField(help_text="Variable value extracted from command output")
+    description = models.TextField(blank=True, help_text="Description of what this variable represents")
+    source_command = models.TextField(blank=True, help_text="The command that generated this variable")
+    source_stage = models.CharField(max_length=20, choices=CommandExecution.COMMAND_STAGE, blank=True)
+    extracted_using_regex = models.TextField(blank=True, help_text="The regex pattern used to extract this variable")
+    is_active = models.BooleanField(default=True, help_text="Whether this variable is still valid/active")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        unique_together = ['workflow_execution', 'name']  # Variable names must be unique per execution
+        indexes = [
+            models.Index(fields=['workflow_execution', 'name']),
+            models.Index(fields=['workflow_execution', 'source_stage']),
+            models.Index(fields=['is_active']),
+        ]
+    
+    def __str__(self):
+        return f"{self.name}: {self.value[:50]}{'...' if len(self.value) > 50 else ''}"
+    
+    def get_display_value(self):
+        """Get a shortened display version of the value"""
+        if len(self.value) <= 100:
+            return self.value
+        return self.value[:97] + "..."

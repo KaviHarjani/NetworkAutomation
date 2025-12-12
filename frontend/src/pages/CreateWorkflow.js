@@ -40,9 +40,75 @@ const highlightRegexMatches = (text, pattern) => {
       
       // Add highlighted match
       parts.push(
-        <span 
+        <span
           key={`match-${index}`}
           className="bg-yellow-200 text-yellow-900 px-1 rounded font-medium"
+        >
+          {match.text}
+        </span>
+      );
+      
+      lastIndex = match.end;
+    });
+    
+    // Add remaining text
+    if (lastIndex < text.length) {
+      parts.push(
+        <span key="text-end">
+          {text.slice(lastIndex)}
+        </span>
+      );
+    }
+    
+    return parts;
+  } catch (error) {
+    // If regex is invalid, return original text
+    return text;
+  }
+};
+
+// Helper function to highlight variable references in commands
+const highlightVariableReferences = (text) => {
+  if (!text) return text;
+  
+  try {
+    // Match {variable_name} patterns
+    const regex = /\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g;
+    const matches = [];
+    let match;
+    
+    // Find all variable references
+    while ((match = regex.exec(text)) !== null) {
+      matches.push({
+        start: match.index,
+        end: match.index + match[0].length,
+        text: match[0],
+        variableName: match[1]
+      });
+    }
+    
+    if (matches.length === 0) return text;
+    
+    // Build highlighted JSX
+    const parts = [];
+    let lastIndex = 0;
+    
+    matches.forEach((match, index) => {
+      // Add text before match
+      if (match.start > lastIndex) {
+        parts.push(
+          <span key={`text-${index}`}>
+            {text.slice(lastIndex, match.start)}
+          </span>
+        );
+      }
+      
+      // Add highlighted variable reference
+      parts.push(
+        <span
+          key={`var-${index}`}
+          className="bg-blue-200 text-blue-900 px-1 rounded font-mono text-sm"
+          title={`Variable: ${match.variableName}`}
         >
           {match.text}
         </span>
@@ -95,14 +161,29 @@ const CommandEditor = React.memo(({ stage, title, description, commands, onComma
               {/* Command Input */}
               <div className="flex gap-2 items-center">
                 <span className="text-sm text-gray-500 w-8 flex-shrink-0">{index + 1}.</span>
-                <input
-                  type="text"
-                  placeholder={`Enter command for ${title.toLowerCase()}`}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  value={command.command || ''}
-                  onChange={(e) => onCommandChange(stage, index, e.target.value, 'command')}
-                  autoComplete="off"
-                />
+                <div className="flex-1">
+                  <input
+                    type="text"
+                    placeholder={`Enter command for ${title.toLowerCase()} (use {variable_name} to reference variables)`}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={command.command || ''}
+                    onChange={(e) => onCommandChange(stage, index, e.target.value, 'command')}
+                    autoComplete="off"
+                  />
+                  
+                  {/* Variable Reference Helper */}
+                  {command.command && command.command.includes('{') && (
+                    <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-sm">
+                      <div className="text-blue-800 font-medium mb-1">Variable References Detected:</div>
+                      <div className="font-mono text-xs">
+                        {highlightVariableReferences(command.command)}
+                      </div>
+                      <div className="text-blue-600 text-xs mt-1">
+                        💡 Variables will be replaced with values from previous commands
+                      </div>
+                    </div>
+                  )}
+                </div>
                 {commands.length > 1 && (
                   <button
                     type="button"
@@ -209,6 +290,67 @@ const CommandEditor = React.memo(({ stage, title, description, commands, onComma
                   )}
                 </div>
               )}
+
+              {/* Variable Assignment Section */}
+              <div className="ml-8 space-y-2">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id={`store-variable-${commandId}`}
+                    checked={command.store_in_variable ? true : false}
+                    onChange={(e) => onCommandChange(stage, index, e.target.checked ? 'variable_name_placeholder' : '', 'store_in_variable')}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <label htmlFor={`store-variable-${commandId}`} className="text-sm font-medium text-gray-700">
+                    Store output in variable
+                  </label>
+                </div>
+                
+                {command.store_in_variable && (
+                  <div className="space-y-2 pl-6">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        Variable Name *
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g., interface_name, vlan_id, router_id"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                        value={command.store_in_variable === 'variable_name_placeholder' ? '' : command.store_in_variable}
+                        onChange={(e) => onCommandChange(stage, index, e.target.value, 'store_in_variable')}
+                      />
+                      <div className="text-xs text-gray-500 mt-1">
+                        Use this variable in other commands with {"{variable_name}"} syntax
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        Variable Description (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Brief description of what this variable represents"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                        value={command.variable_description || ''}
+                        onChange={(e) => onCommandChange(stage, index, e.target.value, 'variable_description')}
+                      />
+                    </div>
+                    
+                    {command.regex_pattern && (
+                      <div className="text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded p-2">
+                        💡 The matched text from your regex pattern will be stored in this variable
+                      </div>
+                    )}
+                    
+                    {!command.regex_pattern && (
+                      <div className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded p-2">
+                        ⚠️ Consider adding a regex pattern to extract specific data for the variable
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           );
         })}
@@ -238,10 +380,10 @@ const CreateWorkflow = () => {
     name: '',
     description: '',
     status: 'active',
-    pre_check_commands: [{ command: '', regex_pattern: '', expected_output: '', operator: 'contains', is_dynamic: false }],
-    implementation_commands: [{ command: '', regex_pattern: '', expected_output: '', operator: 'contains', is_dynamic: false }],
-    post_check_commands: [{ command: '', regex_pattern: '', expected_output: '', operator: 'contains', is_dynamic: false }],
-    rollback_commands: [{ command: '', regex_pattern: '', expected_output: '', operator: 'contains', is_dynamic: false }],
+    pre_check_commands: [{ command: '', regex_pattern: '', expected_output: '', operator: 'contains', is_dynamic: false, store_in_variable: '', variable_description: '' }],
+    implementation_commands: [{ command: '', regex_pattern: '', expected_output: '', operator: 'contains', is_dynamic: false, store_in_variable: '', variable_description: '' }],
+    post_check_commands: [{ command: '', regex_pattern: '', expected_output: '', operator: 'contains', is_dynamic: false, store_in_variable: '', variable_description: '' }],
+    rollback_commands: [{ command: '', regex_pattern: '', expected_output: '', operator: 'contains', is_dynamic: false, store_in_variable: '', variable_description: '' }],
     validation_rules: {
       timeout: 30,
       retry_count: 3
@@ -275,7 +417,7 @@ const CreateWorkflow = () => {
   const addCommand = useCallback((stage) => {
     setFormData(prev => ({
       ...prev,
-      [stage]: [...prev[stage], { command: '', regex_pattern: '', expected_output: '' }]
+      [stage]: [...prev[stage], { command: '', regex_pattern: '', expected_output: '', operator: 'contains', is_dynamic: false, store_in_variable: '', variable_description: '' }]
     }));
   }, []);
 
@@ -323,25 +465,33 @@ const CreateWorkflow = () => {
           command: cmd.command,
           regex_pattern: cmd.regex_pattern || '',
           operator: cmd.operator || 'contains',
-          is_dynamic: cmd.is_dynamic || false
+          is_dynamic: cmd.is_dynamic || false,
+          store_in_variable: cmd.store_in_variable || '',
+          variable_description: cmd.variable_description || ''
         })),
         implementation_commands: formData.implementation_commands.filter(cmd => cmd.command && cmd.command.trim()).map(cmd => ({
           command: cmd.command,
           regex_pattern: cmd.regex_pattern || '',
           operator: cmd.operator || 'contains',
-          is_dynamic: cmd.is_dynamic || false
+          is_dynamic: cmd.is_dynamic || false,
+          store_in_variable: cmd.store_in_variable || '',
+          variable_description: cmd.variable_description || ''
         })),
         post_check_commands: formData.post_check_commands.filter(cmd => cmd.command && cmd.command.trim()).map(cmd => ({
           command: cmd.command,
           regex_pattern: cmd.regex_pattern || '',
           operator: cmd.operator || 'contains',
-          is_dynamic: cmd.is_dynamic || false
+          is_dynamic: cmd.is_dynamic || false,
+          store_in_variable: cmd.store_in_variable || '',
+          variable_description: cmd.variable_description || ''
         })),
         rollback_commands: formData.rollback_commands.filter(cmd => cmd.command && cmd.command.trim()).map(cmd => ({
           command: cmd.command,
           regex_pattern: cmd.regex_pattern || '',
           operator: cmd.operator || 'contains',
-          is_dynamic: cmd.is_dynamic || false
+          is_dynamic: cmd.is_dynamic || false,
+          store_in_variable: cmd.store_in_variable || '',
+          variable_description: cmd.variable_description || ''
         })),
         validation_rules: formData.validation_rules,
       };

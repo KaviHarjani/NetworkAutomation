@@ -3,11 +3,86 @@ from django.utils import timezone
 from django.contrib.auth.models import User
 import logging
 import time
-from .models import WorkflowExecution, CommandExecution, WebhookConfiguration
+import re
+from .models import WorkflowExecution, CommandExecution, WorkflowVariable, WebhookConfiguration
 from .ssh_utils import execute_command_on_device, validate_output
 from .webhook_utils import WebhookManager
 
 logger = logging.getLogger(__name__)
+
+
+def substitute_variables_in_command(command, workflow_execution):
+    """Substitute variables in a command using {variable_name} syntax"""
+    if not command or not isinstance(command, str):
+        return command
+    
+    # Get all active variables for this workflow execution
+    variables = WorkflowVariable.objects.filter(
+        workflow_execution=workflow_execution,
+        is_active=True
+    )
+    
+    # Create a dictionary of variable names to values
+    variable_dict = {var.name: var.value for var in variables}
+    
+    # Substitute variables in the command
+    result = command
+    for var_name, var_value in variable_dict.items():
+        placeholder = f"{{{var_name}}}"
+        result = result.replace(placeholder, var_value)
+    
+    return result
+
+
+def extract_and_store_variables(command_data, output, workflow_execution, stage_name, cmd_exec):
+    """Extract variables from command output and store them in the database"""
+    if not isinstance(command_data, dict):
+        return
+    
+    store_in_variable = command_data.get('store_in_variable', '').strip()
+    if not store_in_variable:
+        return  # No variable to store
+    
+    regex_pattern = command_data.get('regex_pattern', '').strip()
+    if not regex_pattern:
+        logger.warning(f"Command {command_data.get('command', '')} has variable assignment but no regex pattern")
+        return
+    
+    try:
+        # Extract the variable value using the regex pattern
+        compiled_regex = re.compile(regex_pattern)
+        match = compiled_regex.search(output)
+        
+        if match:
+            # If regex has capture groups, use the first group
+            if match.groups():
+                variable_value = match.group(1)
+            else:
+                # If no capture groups, use the full match
+                variable_value = match.group(0)
+            
+            # Store the variable in the database
+            WorkflowVariable.objects.update_or_create(
+                workflow_execution=workflow_execution,
+                name=store_in_variable,
+                defaults={
+                    'value': variable_value,
+                    'description': command_data.get('variable_description', ''),
+                    'source_command': command_data.get('command', ''),
+                    'source_stage': stage_name,
+                    'extracted_using_regex': regex_pattern,
+                    'is_active': True
+                }
+            )
+            
+            logger.info(f"Stored variable '{store_in_variable}' = '{variable_value}' from command: {command_data.get('command', '')}")
+        else:
+            logger.warning(f"Failed to extract variable '{store_in_variable}' - no regex match found")
+            
+    except re.error as e:
+        logger.error(f"Invalid regex pattern for variable extraction: {regex_pattern} - {e}")
+    except Exception as e:
+        logger.error(f"Error extracting variable '{store_in_variable}': {e}")
 
 
 @shared_task(bind=True)
@@ -141,23 +216,26 @@ def execute_workflow_stage(workflow_execution, stage_name, commands):
         try:
             # Handle both string commands and dictionary commands
             if isinstance(command_data, dict):
-                command = command_data.get('command', '')
+                original_command = command_data.get('command', '')
                 regex_pattern = command_data.get('regex_pattern', '')
             else:
-                command = command_data
+                original_command = command_data
                 regex_pattern = ''
+            
+            # Substitute variables in the command
+            final_command = substitute_variables_in_command(original_command, workflow_execution)
             
             # Create command execution record
             cmd_exec = CommandExecution.objects.create(
                 workflow_execution=workflow_execution,
-                command=command,
+                command=original_command,  # Store original command for reference
                 stage=stage_name,
                 status='running',
                 started_at=timezone.now()
             )
             
             # Execute command
-            success, output = execute_command_on_device(device, command)
+            success, output = execute_command_on_device(device, final_command)
             
             cmd_exec.status = 'completed' if success else 'failed'
             cmd_exec.output = output
@@ -165,15 +243,20 @@ def execute_workflow_stage(workflow_execution, stage_name, commands):
             cmd_exec.save()
             
             results.append({
-                'command': command,
+                'command': original_command,
+                'final_command': final_command,  # Include the command after variable substitution
                 'success': success,
                 'output': output,
                 'validation_passed': True,
                 'regex_pattern': regex_pattern
             })
             
+            # Extract and store variables from command output
+            if success and isinstance(command_data, dict):
+                extract_and_store_variables(command_data, output, workflow_execution, stage_name, cmd_exec)
+            
             # Validate output if regex pattern exists
-            if regex_pattern:
+            if regex_pattern and success:
                 validation_rule = {'regex': regex_pattern}
                 # Add operator if available, default to 'contains'
                 if isinstance(command_data, dict) and 'operator' in command_data:
@@ -200,7 +283,7 @@ def execute_workflow_stage(workflow_execution, stage_name, commands):
                 
                 # If validation failed, handle based on stage
                 if not validation_passed:
-                    logger.warning(f"Validation failed for {stage_name}: {command}")
+                    logger.warning(f"Validation failed for {stage_name}: {original_command}")
                     logger.warning(f"Regex pattern: {regex_pattern}")
                     logger.warning(f"Output: {output}")
                     

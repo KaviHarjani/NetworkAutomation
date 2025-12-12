@@ -384,18 +384,41 @@ def workflow_create(request):
         
         from django.contrib.auth.models import User
         user, created = User.objects.get_or_create(
-            username='api_user', 
+            username='api_user',
             defaults={'email': 'api@example.com'}
         )
+        
+        # Process commands to ensure variable assignment fields are properly handled
+        def process_commands_with_variables(commands):
+            """Process commands to handle variable assignments"""
+            processed_commands = []
+            for cmd in commands:
+                if isinstance(cmd, dict):
+                    processed_cmd = cmd.copy()
+                    # Ensure variable fields exist
+                    processed_cmd.setdefault('store_in_variable', '')
+                    processed_cmd.setdefault('variable_description', '')
+                    processed_commands.append(processed_cmd)
+                else:
+                    # Legacy string command format
+                    processed_commands.append({
+                        'command': cmd,
+                        'regex_pattern': '',
+                        'operator': 'contains',
+                        'is_dynamic': False,
+                        'store_in_variable': '',
+                        'variable_description': ''
+                    })
+            return processed_commands
         
         workflow = Workflow.objects.create(
             name=data['name'],
             description=data['description'],
             status=data.get('status', 'draft'),
-            pre_check_commands=data.get('pre_check_commands', []),
-            implementation_commands=data.get('implementation_commands', []),
-            post_check_commands=data.get('post_check_commands', []),
-            rollback_commands=data.get('rollback_commands', []),
+            pre_check_commands=process_commands_with_variables(data.get('pre_check_commands', [])),
+            implementation_commands=process_commands_with_variables(data.get('implementation_commands', [])),
+            post_check_commands=process_commands_with_variables(data.get('post_check_commands', [])),
+            rollback_commands=process_commands_with_variables(data.get('rollback_commands', [])),
             validation_rules=data.get('validation_rules', {}),
             created_by=user
         )
