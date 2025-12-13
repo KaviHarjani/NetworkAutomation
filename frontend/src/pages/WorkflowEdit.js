@@ -76,7 +76,13 @@ const WorkflowEdit = () => {
   const addCommand = (section) => {
     setCommandSections(prev => ({
       ...prev,
-      [section]: [...prev[section], { command: '', description: '' }],
+      [section]: [...prev[section], {
+        command: '',
+        description: '',
+        regex_pattern: '',
+        operator: 'contains',
+        expected_exit_code: null
+      }],
     }));
   };
 
@@ -192,10 +198,10 @@ const WorkflowEdit = () => {
                   </button>
                 </div>
                 
-                <div className="space-y-3">
+                <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Command
+                      Command *
                     </label>
                     <textarea
                       value={command?.command || ''}
@@ -217,6 +223,61 @@ const WorkflowEdit = () => {
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm"
                       placeholder="Command description..."
                     />
+                  </div>
+                  
+                  {/* Validation/Regex Pattern Section */}
+                  <div className="border-t pt-4">
+                    <h4 className="text-sm font-medium text-gray-700 mb-3">Output Validation (Optional)</h4>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          Regex Pattern
+                        </label>
+                        <input
+                          type="text"
+                          value={command?.regex_pattern || ''}
+                          onChange={(e) => updateCommand(sectionKey, index, 'regex_pattern', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm font-mono"
+                          placeholder="Enter regex pattern to validate output..."
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Used to validate command output and extract variables
+                        </p>
+                      </div>
+                      
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          Match Operator
+                        </label>
+                        <select
+                          value={command?.operator || 'contains'}
+                          onChange={(e) => updateCommand(sectionKey, index, 'operator', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm"
+                        >
+                          <option value="contains">Contains</option>
+                          <option value="matches">Regex Matches</option>
+                          <option value="equals">Equals</option>
+                          <option value="starts_with">Starts With</option>
+                          <option value="ends_with">Ends With</option>
+                        </select>
+                      </div>
+                    </div>
+                    
+                    <div className="mt-3">
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        Expected Exit Code (Optional)
+                      </label>
+                      <input
+                        type="number"
+                        value={command?.expected_exit_code || ''}
+                        onChange={(e) => updateCommand(sectionKey, index, 'expected_exit_code', e.target.value ? parseInt(e.target.value) : null)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm"
+                        placeholder="Leave empty for any exit code"
+                        min="0"
+                        max="255"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>

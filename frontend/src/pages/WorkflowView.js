@@ -114,10 +114,31 @@ const WorkflowView = () => {
               {command?.description && (
                 <p className="text-sm text-gray-600 mt-2">{command.description}</p>
               )}
-              {command?.validation && (
-                <div className="mt-2 text-xs text-gray-500">
-                  <div>Expected Pattern: {command.validation.output_pattern || 'Any'}</div>
-                  <div>Exit Code: {command.validation.expected_exit_code || 'Any'}</div>
+              
+              {/* Show validation/pattern information */}
+              {(command?.regex_pattern || command?.operator || command?.expected_exit_code !== null) && (
+                <div className="mt-3 p-3 bg-blue-50 rounded border border-blue-200">
+                  <h5 className="text-xs font-medium text-blue-800 mb-2">Output Validation</h5>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                    {command?.regex_pattern && (
+                      <div>
+                        <span className="font-medium text-blue-700">Regex Pattern:</span>
+                        <div className="font-mono text-blue-600 mt-1">{command.regex_pattern}</div>
+                      </div>
+                    )}
+                    {command?.operator && (
+                      <div>
+                        <span className="font-medium text-blue-700">Match Type:</span>
+                        <div className="text-blue-600 mt-1 capitalize">{command.operator.replace('_', ' ')}</div>
+                      </div>
+                    )}
+                    {command?.expected_exit_code !== null && command?.expected_exit_code !== undefined && (
+                      <div>
+                        <span className="font-medium text-blue-700">Expected Exit Code:</span>
+                        <div className="text-blue-600 mt-1">{command.expected_exit_code}</div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
