@@ -59,6 +59,7 @@ class Workflow(models.Model):
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField()
     status = models.CharField(max_length=20, choices=WORKFLOW_STATUS, default='draft')
+    is_deleted = models.BooleanField(default=False, help_text="Soft delete flag")
     
     # MariaDB-compatible fields - store JSON as text
     pre_check_commands = models.TextField(default='[]', blank=True)

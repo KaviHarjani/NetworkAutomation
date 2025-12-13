@@ -568,6 +568,35 @@ def workflow_update(request, workflow_id):
 
 
 @csrf_exempt
+@require_http_methods(["DELETE", "OPTIONS"])
+def workflow_delete(request, workflow_id):
+    """API endpoint to soft delete a workflow"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = JsonResponse({})
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'DELETE, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
+    
+    try:
+        workflow = Workflow.objects.get(id=workflow_id, is_deleted=False)
+        workflow.is_deleted = True
+        workflow.save()
+        
+        return create_cors_response({
+            'id': str(workflow.id),
+            'message': 'Workflow deleted successfully'
+        })
+        
+    except Workflow.DoesNotExist:
+        return create_cors_response({'error': 'Workflow not found'}, status=404)
+    except Exception as e:
+        return create_cors_response({'error': str(e)}, status=400)
+
+
+@csrf_exempt
 @require_http_methods(["POST", "OPTIONS"])
 def workflow_execute(request):
     """API endpoint to execute a workflow on a device"""

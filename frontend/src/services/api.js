@@ -131,7 +131,7 @@ export const workflowAPI = {
     api.put(`/api/workflows/${workflowId}/update/`, workflowData),
   
   deleteWorkflow: (workflowId) =>
-    api.delete(`/api/workflows/${workflowId}/`),
+    api.delete(`/api/workflows/${workflowId}/delete/`),
   
   getWorkflow: (workflowId) =>
     api.get(`/api/workflows/${workflowId}/`),

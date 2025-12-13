@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { useQuery } from 'react-query';
+import { useQuery, useMutation, useQueryClient } from 'react-query';
 import {
   ArrowLeftIcon,
   PencilIcon,
@@ -10,6 +10,7 @@ import {
   DocumentTextIcon,
   CodeBracketIcon,
   XMarkIcon,
+  TrashIcon,
 } from '@heroicons/react/24/outline';
 
 import StatusBadge from '../components/StatusBadge';
@@ -19,9 +20,31 @@ import toast from 'react-hot-toast';
 const WorkflowView = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [showApiExample, setShowApiExample] = useState(false);
   const [apiExample, setApiExample] = useState(null);
   const [loadingApiExample, setLoadingApiExample] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  // Delete mutation
+  const deleteMutation = useMutation(
+    () => workflowAPI.deleteWorkflow(id),
+    {
+      onSuccess: () => {
+        toast.success('Workflow deleted successfully');
+        queryClient.invalidateQueries(['workflows']);
+        navigate('/workflows');
+      },
+      onError: (error) => {
+        toast.error('Failed to delete workflow: ' + (error.response?.data?.error || error.message));
+      },
+    }
+  );
+
+  const handleDelete = () => {
+    deleteMutation.mutate();
+    setShowDeleteConfirm(false);
+  };
 
   // Fetch workflow details
   const { data, isLoading, error } = useQuery(
@@ -74,7 +97,7 @@ const WorkflowView = () => {
   }
 
   const renderCommandSection = (title, commands, bgColor) => {
-    if (!commands || commands.length === 0) return null;
+    if (!commands || !Array.isArray(commands) || commands.length === 0) return null;
 
     return (
       <div className={`${bgColor} rounded-lg p-6`}>
@@ -86,12 +109,12 @@ const WorkflowView = () => {
                 <span className="text-sm font-medium text-gray-900">Command {index + 1}</span>
               </div>
               <div className="text-sm text-gray-700 font-mono bg-gray-50 p-3 rounded border">
-                {command.command || command}
+                {command?.command || command || 'No command specified'}
               </div>
-              {command.description && (
+              {command?.description && (
                 <p className="text-sm text-gray-600 mt-2">{command.description}</p>
               )}
-              {command.validation && (
+              {command?.validation && (
                 <div className="mt-2 text-xs text-gray-500">
                   <div>Expected Pattern: {command.validation.output_pattern || 'Any'}</div>
                   <div>Exit Code: {command.validation.expected_exit_code || 'Any'}</div>
@@ -156,6 +179,13 @@ const WorkflowView = () => {
               {loadingApiExample ? 'Loading...' : 'API Example'}
             </button>
           )}
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            className="bg-red-600 text-white hover:bg-red-700 px-4 py-2 rounded-lg font-medium transition-colors duration-200 flex items-center"
+          >
+            <TrashIcon className="h-5 w-5 mr-2" />
+            Delete
+          </button>
         </div>
       </div>
 
@@ -301,6 +331,38 @@ const WorkflowView = () => {
                   className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
                 >
                   Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-center justify-center w-12 h-12 mx-auto bg-red-100 rounded-full mb-4">
+                <TrashIcon className="h-6 w-6 text-red-600" />
+              </div>
+              <h3 className="text-xl font-semibold text-gray-900 text-center mb-2">Delete Workflow</h3>
+              <p className="text-gray-600 text-center mb-6">
+                Are you sure you want to delete "{workflow.name}"? This action cannot be undone.
+              </p>
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="flex-1 px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDelete}
+                  disabled={deleteMutation.isLoading}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium disabled:opacity-50"
+                >
+                  {deleteMutation.isLoading ? 'Deleting...' : 'Delete'}
                 </button>
               </div>
             </div>

@@ -20,11 +20,19 @@ router.register(r'executions', ExecutionViewSet, basename='execution')
 router.register(r'logs', LogViewSet, basename='log')
 
 urlpatterns = [
+    # Custom workflow create endpoint to match frontend expectations
+    path('workflows/create/', api_views.workflow_create,
+         name='workflow_create'),
+    
+    # Custom workflow delete endpoint
+    path('workflows/<str:workflow_id>/delete/', api_views.workflow_delete,
+         name='workflow_delete'),
+    
     # Include router URLs
     path('', include(router.urls)),
     
     # Authentication endpoints (keeping these as function-based views)
-    path('auth/csrf-token/', api_auth_views.api_csrf_token, 
+    path('auth/csrf-token/', api_auth_views.api_csrf_token,
          name='api_csrf_token'),
     path('auth/login/', api_auth_views.api_login, name='api_login'),
     path('auth/logout/', api_auth_views.api_logout, name='api_logout'),

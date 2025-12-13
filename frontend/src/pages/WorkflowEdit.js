@@ -156,7 +156,7 @@ const WorkflowEdit = () => {
   }
 
   const renderCommandSection = (title, sectionKey, bgColor) => {
-    const commands = commandSections[sectionKey];
+    const commands = commandSections[sectionKey] || [];
 
     return (
       <div className={`${bgColor} rounded-lg p-6`}>
@@ -172,7 +172,7 @@ const WorkflowEdit = () => {
           </button>
         </div>
 
-        {commands.length === 0 ? (
+        {!Array.isArray(commands) || commands.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
             <DocumentTextIcon className="h-8 w-8 mx-auto mb-2 text-gray-300" />
             <p>No commands added yet</p>
@@ -198,7 +198,7 @@ const WorkflowEdit = () => {
                       Command
                     </label>
                     <textarea
-                      value={command.command}
+                      value={command?.command || ''}
                       onChange={(e) => updateCommand(sectionKey, index, 'command', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent font-mono text-sm"
                       rows={2}
@@ -212,7 +212,7 @@ const WorkflowEdit = () => {
                     </label>
                     <input
                       type="text"
-                      value={command.description}
+                      value={command?.description || ''}
                       onChange={(e) => updateCommand(sectionKey, index, 'description', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm"
                       placeholder="Command description..."

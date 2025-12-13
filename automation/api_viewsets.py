@@ -111,9 +111,9 @@ class WorkflowViewSet(viewsets.ViewSet):
         }
     )
     def list(self, request):
-        """List all workflows"""
+        """List all workflows (excluding deleted ones)"""
         try:
-            workflows = Workflow.objects.all()
+            workflows = Workflow.objects.filter(is_deleted=False)
             
             serializer = WorkflowSerializer(workflows, many=True)
             return Response({'workflows': serializer.data})
@@ -165,10 +165,10 @@ class WorkflowViewSet(viewsets.ViewSet):
             500: ErrorResponseSerializer
         }
     )
-    def retrieve(self, request, workflow_id=None):
-        """Get workflow details"""
+    def retrieve(self, request, pk=None):
+        """Get workflow details (excluding deleted ones)"""
         try:
-            workflow = Workflow.objects.get(id=workflow_id)
+            workflow = Workflow.objects.get(id=pk, is_deleted=False)
             serializer = WorkflowSerializer(workflow)
             return Response(serializer.data)
             
@@ -187,10 +187,10 @@ class WorkflowViewSet(viewsets.ViewSet):
             400: ErrorResponseSerializer
         }
     )
-    def update(self, request, workflow_id=None):
+    def update(self, request, pk=None):
         """Update a workflow"""
         try:
-            workflow = Workflow.objects.get(id=workflow_id)
+            workflow = Workflow.objects.get(id=pk)
             serializer = WorkflowCreateSerializer(workflow, data=request.data, partial=True)
             
             if serializer.is_valid():
@@ -202,6 +202,39 @@ class WorkflowViewSet(viewsets.ViewSet):
             else:
                 return Response({'error': str(serializer.errors)}, status=status.HTTP_400_BAD_REQUEST)
                 
+        except Workflow.DoesNotExist:
+            return Response({'error': 'Workflow not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    
+    @extend_schema(
+        summary="Soft Delete Workflow",
+        description="Soft delete a workflow (mark as deleted without removing from database)",
+        responses={
+            200: {
+                'type': 'object',
+                'properties': {
+                    'message': {'type': 'string'},
+                    'id': {'type': 'string'}
+                }
+            },
+            404: ErrorResponseSerializer,
+            400: ErrorResponseSerializer
+        }
+    )
+    @action(detail=True, methods=['delete'])
+    def delete(self, request, pk=None):
+        """Soft delete a workflow"""
+        try:
+            workflow = Workflow.objects.get(id=pk, is_deleted=False)
+            workflow.is_deleted = True
+            workflow.save()
+            
+            return Response({
+                'id': str(workflow.id),
+                'message': 'Workflow deleted successfully'
+            })
+            
         except Workflow.DoesNotExist:
             return Response({'error': 'Workflow not found'}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
