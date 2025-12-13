@@ -65,6 +65,7 @@ class Workflow(models.Model):
     implementation_commands = models.TextField(default='[]', blank=True)
     post_check_commands = models.TextField(default='[]', blank=True)
     rollback_commands = models.TextField(default='[]', blank=True)
+    required_dynamic_params = models.TextField(default='[]', blank=True, help_text="List of commands that require dynamic parameters")
     
     # Each command will be stored as: {"command": "...", "regex_pattern": "..."}
     validation_rules = models.TextField(default='{}', blank=True)
@@ -125,10 +126,51 @@ class Workflow(models.Model):
             return json.loads(self.validation_rules) if self.validation_rules else {}
         except (json.JSONDecodeError, TypeError):
             return {}
-    
+
     def set_validation_rules(self, rules):
         """Store validation rules as JSON in text field"""
         self.validation_rules = json.dumps(rules)
+
+    def get_required_dynamic_params(self):
+        """Get list of commands that require dynamic parameters"""
+        try:
+            return json.loads(self.required_dynamic_params) if self.required_dynamic_params else []
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+    def set_required_dynamic_params(self, params):
+        """Store required dynamic parameters as JSON in text field"""
+        self.required_dynamic_params = json.dumps(params)
+
+    def get_example_api_body(self):
+        """Generate example API body for executing this workflow with required dynamic parameters"""
+        required_params = self.get_required_dynamic_params()
+        if not required_params:
+            return {
+                "workflow_id": str(self.id),
+                "device_id": "DEVICE_ID_HERE",
+                "dynamic_params": {}
+            }
+        
+        # Generate example values for each required parameter
+        example_params = {}
+        for param in required_params:
+            if "interface" in param.lower():
+                example_params[param] = "GigabitEthernet0/1"
+            elif "vlan" in param.lower():
+                example_params[param] = "100"
+            elif "port" in param.lower():
+                example_params[param] = "8080"
+            elif "ip" in param.lower():
+                example_params[param] = "192.168.1.1"
+            else:
+                example_params[param] = "example_value"
+        
+        return {
+            "workflow_id": str(self.id),
+            "device_id": "DEVICE_ID_HERE",
+            "dynamic_params": example_params
+        }
     
     def __str__(self):
         return self.name

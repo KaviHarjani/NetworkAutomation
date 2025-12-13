@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { PlusIcon, TrashIcon, EyeIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, TrashIcon, EyeIcon, CodeBracketIcon, ClipboardDocumentIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { workflowAPI } from '../services/api';
 
@@ -439,6 +439,93 @@ const CreateWorkflow = () => {
     }, 0);
   }, [formData]);
 
+  // Extract dynamic parameters from commands
+  const dynamicParams = useMemo(() => {
+    const stages = ['pre_check_commands', 'implementation_commands', 'post_check_commands', 'rollback_commands'];
+    const params = [];
+    
+    stages.forEach(stage => {
+      formData[stage].forEach(cmd => {
+        if (cmd.is_dynamic && cmd.command && cmd.command.trim()) {
+          // Extract {{param}} patterns from the command
+          const matches = cmd.command.match(/\{\{([^}]+)\}\}/g);
+          if (matches) {
+            matches.forEach(match => {
+              const paramName = match.replace(/\{\{|\}\}/g, '').trim();
+              if (!params.find(p => p.name === paramName)) {
+                params.push({
+                  name: paramName,
+                  command: cmd.command,
+                  stage: stage.replace('_commands', '').replace('_', ' ')
+                });
+              }
+            });
+          }
+        }
+      });
+    });
+    
+    return params;
+  }, [formData]);
+
+  // Generate example API body
+  const exampleApiBody = useMemo(() => {
+    const dynamicParamsObj = {};
+    dynamicParams.forEach(param => {
+      // Generate smart example values based on parameter name
+      let exampleValue = 'value';
+      const paramLower = param.name.toLowerCase();
+      
+      if (paramLower.includes('interface') || paramLower.includes('port')) {
+        exampleValue = 'GigabitEthernet0/1';
+      } else if (paramLower.includes('vlan')) {
+        exampleValue = '100';
+      } else if (paramLower.includes('ip') || paramLower.includes('address')) {
+        exampleValue = '192.168.1.1';
+      } else if (paramLower.includes('mask') || paramLower.includes('subnet')) {
+        exampleValue = '255.255.255.0';
+      } else if (paramLower.includes('name') || paramLower.includes('hostname')) {
+        exampleValue = 'example-name';
+      } else if (paramLower.includes('description') || paramLower.includes('desc')) {
+        exampleValue = 'Example description';
+      } else if (paramLower.includes('speed')) {
+        exampleValue = '1000';
+      } else if (paramLower.includes('duplex')) {
+        exampleValue = 'full';
+      } else if (paramLower.includes('mtu')) {
+        exampleValue = '1500';
+      } else if (paramLower.includes('cost')) {
+        exampleValue = '10';
+      } else if (paramLower.includes('priority')) {
+        exampleValue = '100';
+      } else if (paramLower.includes('timeout')) {
+        exampleValue = '30';
+      } else if (paramLower.includes('count') || paramLower.includes('number')) {
+        exampleValue = '5';
+      }
+      
+      dynamicParamsObj[param.command] = exampleValue;
+    });
+    
+    return {
+      workflow_id: 'WORKFLOW_ID_HERE',
+      device_id: 'DEVICE_ID_HERE',
+      dynamic_params: dynamicParamsObj
+    };
+  }, [dynamicParams]);
+
+  // State for showing API example
+  const [showApiExample, setShowApiExample] = useState(false);
+
+  // Copy to clipboard function
+  const copyToClipboard = useCallback((text) => {
+    navigator.clipboard.writeText(text).then(() => {
+      toast.success('Copied to clipboard!');
+    }).catch(() => {
+      toast.error('Failed to copy to clipboard');
+    });
+  }, []);
+
   // Submit handler
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -616,12 +703,96 @@ const CreateWorkflow = () => {
           {/* Summary */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
             <h3 className="text-lg font-semibold text-blue-900 mb-2">Summary</h3>
-            <div className="text-center">
+            <div className="flex justify-center items-center gap-8">
               <span className="text-lg font-semibold text-blue-900">
                 Total Commands: {commandCount}
               </span>
+              <span className="text-lg font-semibold text-purple-900">
+                Dynamic Parameters: {dynamicParams.length}
+              </span>
             </div>
           </div>
+
+          {/* API Example Preview - Only show if there are dynamic parameters */}
+          {dynamicParams.length > 0 && (
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <CodeBracketIcon className="w-6 h-6 text-purple-600" />
+                  <h3 className="text-lg font-semibold text-purple-900">API Example Preview</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowApiExample(!showApiExample)}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    showApiExample
+                      ? 'bg-purple-600 text-white hover:bg-purple-700'
+                      : 'bg-white text-purple-700 border border-purple-300 hover:bg-purple-100'
+                  }`}
+                >
+                  {showApiExample ? 'Hide Example' : 'Show Example'}
+                </button>
+              </div>
+              
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                <h4 className="font-medium text-yellow-800 mb-2">⚠️ Dynamic Parameters Detected</h4>
+                <p className="text-sm text-yellow-700 mb-2">
+                  This workflow requires the following dynamic parameters when triggered via API:
+                </p>
+                <ul className="list-disc list-inside text-sm text-yellow-700 space-y-1">
+                  {dynamicParams.map((param, index) => (
+                    <li key={index}>
+                      <span className="font-mono bg-yellow-100 px-1 rounded">{`{{${param.name}}}`}</span>
+                      <span className="text-yellow-600 ml-2">in {param.stage}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              
+              {showApiExample && (
+                <div className="space-y-4">
+                  <div className="bg-white rounded-lg p-4 border border-purple-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-medium text-gray-900">Example API Request Body</h4>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(JSON.stringify(exampleApiBody, null, 2))}
+                        className="flex items-center gap-1 text-sm text-purple-600 hover:text-purple-800"
+                      >
+                        <ClipboardDocumentIcon className="w-4 h-4" />
+                        Copy
+                      </button>
+                    </div>
+                    <div className="bg-gray-900 text-green-400 rounded-lg p-4 font-mono text-sm overflow-x-auto">
+                      <pre>{JSON.stringify(exampleApiBody, null, 2)}</pre>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      Replace WORKFLOW_ID_HERE and DEVICE_ID_HERE with actual IDs after creating the workflow
+                    </p>
+                  </div>
+                  
+                  <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                    <h4 className="font-medium text-blue-900 mb-2">API Endpoint</h4>
+                    <div className="bg-blue-100 text-blue-800 rounded p-3 font-mono text-sm">
+                      POST /api/workflows/execute/
+                    </div>
+                    <p className="text-xs text-blue-600 mt-2">
+                      Send the request to this endpoint with the JSON body shown above
+                    </p>
+                  </div>
+                  
+                  <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+                    <h4 className="font-medium text-green-900 mb-2">How Dynamic Parameters Work</h4>
+                    <ol className="list-decimal list-inside text-sm text-green-700 space-y-1">
+                      <li>Commands marked as "Dynamic" use <span className="font-mono bg-green-100 px-1 rounded">{`{{param}}`}</span> syntax</li>
+                      <li>When executing via API, provide values in the <span className="font-mono bg-green-100 px-1 rounded">dynamic_params</span> object</li>
+                      <li>The system replaces placeholders with provided values before execution</li>
+                    </ol>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Submit Button */}
           <div className="flex justify-end space-x-4">

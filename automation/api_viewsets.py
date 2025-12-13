@@ -207,6 +207,49 @@ class WorkflowViewSet(viewsets.ViewSet):
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+    @extend_schema(
+        summary="Get Example API Body",
+        description="Get example API request body for executing a workflow with dynamic parameters",
+        responses={
+            200: {
+                'type': 'object',
+                'properties': {
+                    'workflow_id': {'type': 'string'},
+                    'workflow_name': {'type': 'string'},
+                    'example_api_body': {'type': 'object'},
+                    'required_dynamic_params': {'type': 'array', 'items': {'type': 'string'}},
+                    'has_dynamic_params': {'type': 'boolean'}
+                }
+            },
+            404: ErrorResponseSerializer,
+            500: ErrorResponseSerializer
+        }
+    )
+    @action(detail=True, methods=['get'])
+    def example_api_body(self, request, pk=None):
+        """Get example API body for executing a workflow with dynamic parameters"""
+        try:
+            workflow = Workflow.objects.get(id=pk)
+            
+            # Get required dynamic parameters
+            required_params = workflow.get_required_dynamic_params()
+            
+            # Generate example API body
+            example_body = workflow.get_example_api_body()
+            
+            return Response({
+                'workflow_id': str(workflow.id),
+                'workflow_name': workflow.name,
+                'example_api_body': example_body,
+                'required_dynamic_params': required_params,
+                'has_dynamic_params': len(required_params) > 0
+            })
+                
+        except Workflow.DoesNotExist:
+            return Response({'error': 'Workflow not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 class ExecutionViewSet(viewsets.ViewSet):
     """

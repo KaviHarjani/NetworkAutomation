@@ -411,6 +411,14 @@ def workflow_create(request):
                     })
             return processed_commands
         
+        # Extract required dynamic parameters from commands
+        required_dynamic_params = []
+        for stage in ['pre_check_commands', 'implementation_commands', 'post_check_commands', 'rollback_commands']:
+            commands = data.get(stage, [])
+            for cmd in commands:
+                if isinstance(cmd, dict) and cmd.get('is_dynamic'):
+                    required_dynamic_params.append(cmd.get('command', ''))
+
         workflow = Workflow.objects.create(
             name=data['name'],
             description=data['description'],
@@ -420,6 +428,7 @@ def workflow_create(request):
             post_check_commands=process_commands_with_variables(data.get('post_check_commands', [])),
             rollback_commands=process_commands_with_variables(data.get('rollback_commands', [])),
             validation_rules=data.get('validation_rules', {}),
+            required_dynamic_params=required_dynamic_params,
             created_by=user
         )
         
@@ -442,10 +451,10 @@ def workflow_detail(request, workflow_id):
         response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
         response['Access-Control-Max-Age'] = '86400'
         return response
-    
+
     try:
         workflow = Workflow.objects.get(id=workflow_id)
-        
+
         # Helper function to count actual commands (with command text)
         def count_commands(commands):
             if not commands:
@@ -457,7 +466,7 @@ def workflow_detail(request, workflow_id):
             else:
                 # New format - count objects with command text
                 return len([cmd for cmd in commands if cmd.get('command', '').strip()])
-        
+
         workflow_data = {
             'id': str(workflow.id),
             'name': workflow.name,
@@ -471,6 +480,7 @@ def workflow_detail(request, workflow_id):
             'post_check_commands': workflow.get_post_check_commands(),
             'rollback_commands': workflow.get_rollback_commands(),
             'validation_rules': workflow.get_validation_rules(),
+            'required_dynamic_params': workflow.get_required_dynamic_params(),
             'command_counts': {
                 'pre_check': count_commands(workflow.get_pre_check_commands()),
                 'implementation': count_commands(workflow.get_implementation_commands()),
@@ -478,9 +488,39 @@ def workflow_detail(request, workflow_id):
                 'rollback': count_commands(workflow.get_rollback_commands())
             }
         }
-        
+
         return create_cors_response(workflow_data)
+
+    except Workflow.DoesNotExist:
+        return create_cors_response({'error': 'Workflow not found'}, status=404)
+    except Exception as e:
+        return create_cors_response({'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["GET", "OPTIONS"])
+def workflow_example_api_body(request, workflow_id):
+    """API endpoint to get example API body for executing a workflow with dynamic parameters"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = JsonResponse({})
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
+
+    try:
+        workflow = Workflow.objects.get(id=workflow_id)
+        example_body = workflow.get_example_api_body()
         
+        return create_cors_response({
+            'workflow_id': str(workflow.id),
+            'workflow_name': workflow.name,
+            'example_api_body': example_body,
+            'required_dynamic_params': workflow.get_required_dynamic_params(),
+            'has_dynamic_params': len(workflow.get_required_dynamic_params()) > 0
+        })
+
     except Workflow.DoesNotExist:
         return create_cors_response({'error': 'Workflow not found'}, status=404)
     except Exception as e:

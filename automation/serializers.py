@@ -74,6 +74,8 @@ class WorkflowSerializer(serializers.ModelSerializer):
         source='created_by.username', read_only=True
     )
     command_counts = serializers.SerializerMethodField()
+    required_dynamic_params = serializers.SerializerMethodField()
+    has_dynamic_params = serializers.SerializerMethodField()
     
     def get_command_counts(self, obj):
         """Calculate command counts for each stage"""
@@ -85,7 +87,7 @@ class WorkflowSerializer(serializers.ModelSerializer):
                     return len([cmd for cmd in commands if cmd.strip()])
                 else:
                     return len([
-                        cmd for cmd in commands 
+                        cmd for cmd in commands
                         if cmd.get('command', '').strip()
                     ])
             except (IndexError, TypeError):
@@ -100,18 +102,28 @@ class WorkflowSerializer(serializers.ModelSerializer):
             'rollback': count_commands(obj.get_rollback_commands())
         }
     
+    def get_required_dynamic_params(self, obj):
+        """Get list of commands that require dynamic parameters"""
+        return obj.get_required_dynamic_params()
+    
+    def get_has_dynamic_params(self, obj):
+        """Check if workflow has any dynamic parameters"""
+        params = obj.get_required_dynamic_params()
+        return len(params) > 0 if params else False
+    
     class Meta:
         model = Workflow
         fields = [
             'id', 'name', 'description', 'status', 'pre_check_commands',
-            'implementation_commands', 'post_check_commands', 
-            'rollback_commands', 'validation_rules', 'created_by', 
-            'created_by_username', 'created_at', 'updated_at', 
-            'command_counts'
+            'implementation_commands', 'post_check_commands',
+            'rollback_commands', 'validation_rules', 'created_by',
+            'created_by_username', 'created_at', 'updated_at',
+            'command_counts', 'required_dynamic_params', 'has_dynamic_params'
         ]
         read_only_fields = [
-            'id', 'created_by', 'created_by_username', 'created_at', 
-            'updated_at', 'command_counts'
+            'id', 'created_by', 'created_by_username', 'created_at',
+            'updated_at', 'command_counts', 'required_dynamic_params',
+            'has_dynamic_params'
         ]
 
 
