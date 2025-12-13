@@ -98,7 +98,7 @@ export const deviceAPI = {
     api.get('/api/devices/', { params }),
   
   createDevice: (deviceData) =>
-    api.post('/api/devices/create/', deviceData),
+    api.post('/api/devices/', deviceData),
   
   updateDevice: (deviceId, deviceData) =>
     api.put(`/api/devices/${deviceId}/`, deviceData),
@@ -125,10 +125,10 @@ export const workflowAPI = {
     api.get('/api/workflows/'),
   
   createWorkflow: (workflowData) =>
-    api.post('/api/workflows/create/', workflowData),
+    api.post('/api/workflows/', workflowData),
   
   updateWorkflow: (workflowId, workflowData) =>
-    api.put(`/api/workflows/${workflowId}/update/`, workflowData),
+    api.put(`/api/workflows/${workflowId}/`, workflowData),
   
   deleteWorkflow: (workflowId) =>
     api.delete(`/api/workflows/${workflowId}/delete/`),

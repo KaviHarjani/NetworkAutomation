@@ -77,6 +77,33 @@ class WorkflowSerializer(serializers.ModelSerializer):
     required_dynamic_params = serializers.SerializerMethodField()
     has_dynamic_params = serializers.SerializerMethodField()
     
+    # Use getter methods instead of raw database fields for commands
+    pre_check_commands = serializers.SerializerMethodField()
+    implementation_commands = serializers.SerializerMethodField()
+    post_check_commands = serializers.SerializerMethodField()
+    rollback_commands = serializers.SerializerMethodField()
+    validation_rules = serializers.SerializerMethodField()
+    
+    def get_pre_check_commands(self, obj):
+        """Get parsed pre-check commands"""
+        return obj.get_pre_check_commands()
+    
+    def get_implementation_commands(self, obj):
+        """Get parsed implementation commands"""
+        return obj.get_implementation_commands()
+    
+    def get_post_check_commands(self, obj):
+        """Get parsed post-check commands"""
+        return obj.get_post_check_commands()
+    
+    def get_rollback_commands(self, obj):
+        """Get parsed rollback commands"""
+        return obj.get_rollback_commands()
+    
+    def get_validation_rules(self, obj):
+        """Get parsed validation rules"""
+        return obj.get_validation_rules()
+    
     def get_command_counts(self, obj):
         """Calculate command counts for each stage"""
         def count_commands(commands):
