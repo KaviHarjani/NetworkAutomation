@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { PlusIcon, PlayIcon, DocumentTextIcon, DocumentDuplicateIcon, PencilIcon, TrashIcon, EyeIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { ansibleAPI } from '../services/api';
 
 const AnsibleWorkflows = () => {
+  const navigate = useNavigate();
   const [playbooks, setPlaybooks] = useState([]);
   const [inventories, setInventories] = useState([]);
   const [executions, setExecutions] = useState([]);
@@ -132,7 +134,7 @@ const AnsibleWorkflows = () => {
             <div className="flex justify-between items-center">
               <h2 className="text-2xl font-semibold text-gray-900">Playbooks</h2>
               <button
-                onClick={() => window.location.href = '/ansible-playbook-create'}
+                onClick={() => navigate('/ansible-playbook-create')}
                 className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
               >
                 <PlusIcon className="w-4 h-4 mr-2" />
@@ -150,7 +152,7 @@ const AnsibleWorkflows = () => {
                     </div>
                     <div className="ml-4 flex items-center space-x-2">
                       <button
-                        onClick={() => window.location.href = `/ansible-playbook-edit/${playbook.id}`}
+                        onClick={() => navigate(`/ansible-playbook-edit/${playbook.id}`)}
                         className="text-gray-400 hover:text-gray-600"
                       >
                         <PencilIcon className="w-5 h-5" />
@@ -189,7 +191,7 @@ const AnsibleWorkflows = () => {
 
                   <div className="mt-4 flex space-x-3">
                     <button
-                      onClick={() => window.location.href = `/ansible-playbook-view/${playbook.id}`}
+                      onClick={() => navigate(`/ansible-playbook-view/${playbook.id}`)}
                       className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
                     >
                       <EyeIcon className="w-4 h-4 mr-2" />
@@ -206,7 +208,7 @@ const AnsibleWorkflows = () => {
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No Playbooks Yet</h3>
                 <p className="text-gray-600 mb-6">Create your first Ansible playbook to get started.</p>
                 <button
-                  onClick={() => window.location.href = '/ansible-playbook-create'}
+                  onClick={() => navigate('/ansible-playbook-create')}
                   className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
                 >
                   <PlusIcon className="w-4 h-4 mr-2" />
@@ -223,7 +225,7 @@ const AnsibleWorkflows = () => {
             <div className="flex justify-between items-center">
               <h2 className="text-2xl font-semibold text-gray-900">Inventories</h2>
               <button
-                onClick={() => window.location.href = '/ansible-inventory-create'}
+                onClick={() => navigate('/ansible-inventory-create')}
                 className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700"
               >
                 <PlusIcon className="w-4 h-4 mr-2" />
@@ -241,7 +243,7 @@ const AnsibleWorkflows = () => {
                     </div>
                     <div className="ml-4 flex items-center space-x-2">
                       <button
-                        onClick={() => window.location.href = `/ansible-inventory-edit/${inventory.id}`}
+                        onClick={() => navigate(`/ansible-inventory-edit/${inventory.id}`)}
                         className="text-gray-400 hover:text-gray-600"
                       >
                         <PencilIcon className="w-5 h-5" />
@@ -279,7 +281,7 @@ const AnsibleWorkflows = () => {
 
                   <div className="mt-4 flex space-x-3">
                     <button
-                      onClick={() => window.location.href = `/ansible-inventory-view/${inventory.id}`}
+                      onClick={() => navigate(`/ansible-inventory-view/${inventory.id}`)}
                       className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
                     >
                       <EyeIcon className="w-4 h-4 mr-2" />
@@ -296,7 +298,7 @@ const AnsibleWorkflows = () => {
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No Inventories Yet</h3>
                 <p className="text-gray-600 mb-6">Create your first Ansible inventory to get started.</p>
                 <button
-                  onClick={() => window.location.href = '/ansible-inventory-create'}
+                  onClick={() => navigate('/ansible-inventory-create')}
                   className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700"
                 >
                   <PlusIcon className="w-4 h-4 mr-2" />
@@ -383,7 +385,7 @@ const AnsibleWorkflows = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                           <button
-                            onClick={() => window.location.href = `/ansible-execution-detail/${execution.id}`}
+                            onClick={() => navigate(`/ansible-execution-detail/${execution.id}`)}
                             className="text-blue-600 hover:text-blue-900"
                           >
                             View Details

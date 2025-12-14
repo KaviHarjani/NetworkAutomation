@@ -2,7 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
 from automation.ansible_api_views import AnsibleExecutionViewSet, AnsibleInventoryViewSet, AnsiblePlaybookViewSet
-from . import api_auth_views, api_views
+from . import api_auth_views, api_views, csrf_exempt_views
 from .api_views import (
     device_grouping,
     assign_workflow_to_group,
@@ -53,12 +53,20 @@ urlpatterns = [
     path('auth/login/', api_auth_views.api_login, name='api_login'),
     path('auth/logout/', api_auth_views.api_logout, name='api_logout'),
     path('auth/user/', api_auth_views.api_user, name='api_user'),
+    
+    # CSRF-exempt Ansible validation endpoints
+    path('ansible-playbooks/validate/', csrf_exempt_views.ansible_playbook_validate,
+         name='ansible_playbook_validate'),
+    path('ansible-inventories/validate/', csrf_exempt_views.ansible_inventory_validate,
+         name='ansible_inventory_validate'),
+    
     # Device grouping and mapping endpoints
     path('devices/groupings/', device_grouping, name='device_groupings'),
     path('devices/assign-workflow/',
          assign_workflow_to_group,
          name='assign_workflow_to_group'),
     path('executions/execute/', execute_workflow_api, name='execute_workflow'),
+    
     # Webhook endpoints
     path('webhooks/',
          api_views.webhook_list,

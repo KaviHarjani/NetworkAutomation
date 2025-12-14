@@ -9,8 +9,8 @@ from django.contrib.auth import views as auth_views
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('', include('automation.urls')),
     path('api/', include('automation.api_urls')),
+    path('', include('automation.urls')),
 ]
 
 if settings.DEBUG:

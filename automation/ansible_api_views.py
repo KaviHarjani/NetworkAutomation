@@ -7,6 +7,9 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 from django.core.paginator import Paginator
 from django.contrib.auth.models import User
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
+from django.http import JsonResponse
 from .models import AnsiblePlaybook, AnsibleInventory, AnsibleExecution
 from .ansible_serializers import (
     AnsiblePlaybookSerializer, AnsiblePlaybookCreateSerializer,
@@ -20,10 +23,23 @@ from .tasks import execute_ansible_playbook_task
 from .ansible_utils import validate_ansible_playbook_content, validate_ansible_inventory_content
 
 
+def create_cors_response(data, status=200):
+    """Create JSON response with CORS headers"""
+    response = JsonResponse(data, status=status)
+    response['Access-Control-Allow-Origin'] = '*'
+    response['Access-Control-Allow-Credentials'] = 'true'
+    response['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+    response['Access-Control-Allow-Headers'] = (
+        'Content-Type, Authorization, X-Requested-With, X-CSRFToken, Accept, Accept-Encoding'
+    )
+    return response
+
+
 class AnsiblePlaybookViewSet(viewsets.ViewSet):
     """
     ViewSet for managing Ansible playbooks
     """
+    authentication_classes = []    
     permission_classes = [AllowAny]
     
     def list(self, request):
@@ -134,20 +150,27 @@ class AnsiblePlaybookViewSet(viewsets.ViewSet):
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
     
-    @action(detail=False, methods=['post'])
+    @action(detail=False, methods=['post'], authentication_classes=[], permission_classes=[AllowAny])
     def validate(self, request):
         """Validate Ansible playbook syntax"""
         try:
             playbook_content = request.data.get('playbook_content', '')
-            
+
             if not playbook_content:
-                return Response({'error': 'playbook_content is required'}, status=status.HTTP_400_BAD_REQUEST)
-            
+                return create_cors_response(
+                    {'error': 'playbook_content is required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
             validation_result = validate_ansible_playbook_content(playbook_content)
-            return Response(validation_result)
-            
+
+            return create_cors_response(validation_result)
+
         except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            return create_cors_response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 
 class AnsibleInventoryViewSet(viewsets.ViewSet):
@@ -264,20 +287,27 @@ class AnsibleInventoryViewSet(viewsets.ViewSet):
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
     
-    @action(detail=False, methods=['post'])
+    @action(detail=False, methods=['post'], authentication_classes=[], permission_classes=[AllowAny])
     def validate(self, request):
         """Validate Ansible inventory syntax"""
         try:
             inventory_content = request.data.get('inventory_content', '')
-            
+
             if not inventory_content:
-                return Response({'error': 'inventory_content is required'}, status=status.HTTP_400_BAD_REQUEST)
-            
+                return create_cors_response(
+                    {'error': 'inventory_content is required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
             validation_result = validate_ansible_inventory_content(inventory_content)
-            return Response(validation_result)
-            
+
+            return create_cors_response(validation_result)
+
         except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            return create_cors_response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 
 class AnsibleExecutionViewSet(viewsets.ViewSet):
