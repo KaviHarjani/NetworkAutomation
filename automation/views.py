@@ -2,7 +2,7 @@ from django.shortcuts import render
 from django.http import HttpResponse
 import os
 
-def react_app_view(request):
+def react_app_view(request, path=None):
     """Serve the React app"""
     # Get the path to the React build directory
     react_build_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'frontend', 'build')

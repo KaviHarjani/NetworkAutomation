@@ -206,13 +206,67 @@ def execute_workflow(self, workflow_execution_id):
         return {'status': 'error', 'error': str(e)}
 
 
-def execute_workflow_stage(workflow_execution, stage_name, commands):
-    """Execute a stage of the workflow (pre-check, implementation, post-check, rollback)"""
-    workflow = workflow_execution.workflow
-    device = workflow_execution.device
+def evaluate_condition(condition, output, exit_code, workflow_execution):
+    """Evaluate a conditional logic rule"""
+    if not condition or not isinstance(condition, dict):
+        return True  # No condition means always true
+
+    condition_type = condition.get('type', '')
+    operator = condition.get('operator', 'contains')
+
+    try:
+        if condition_type == 'if_regex_matches':
+            pattern = condition.get('pattern', '')
+            if not pattern:
+                return True
+            import re
+            compiled_regex = re.compile(pattern, re.MULTILINE | re.DOTALL)
+            match = compiled_regex.search(output)
+            return bool(match)
+
+        elif condition_type == 'if_exit_code_equals':
+            expected_code = condition.get('exit_code', 0)
+            return exit_code == expected_code
+
+        elif condition_type == 'if_output_contains':
+            text = condition.get('text', '')
+            if operator == 'contains':
+                return text in output
+            elif operator == 'equals':
+                return output.strip() == text
+            elif operator == 'starts_with':
+                return output.strip().startswith(text)
+            elif operator == 'ends_with':
+                return output.strip().endswith(text)
+            return False
+
+        elif condition_type == 'if_variable_equals':
+            var_name = condition.get('variable_name', '')
+            expected_value = condition.get('value', '')
+            # Get variable value from workflow execution
+            variables = WorkflowVariable.objects.filter(
+                workflow_execution=workflow_execution,
+                name=var_name,
+                is_active=True
+            )
+            if variables.exists():
+                return variables.first().value == expected_value
+            return False
+
+        else:
+            # Unknown condition type, default to true
+            return True
+
+    except Exception as e:
+        logger.error(f"Error evaluating condition {condition_type}: {e}")
+        return False
+
+
+def execute_conditional_commands(workflow_execution, stage_name, commands, workflow_execution_obj):
+    """Execute a list of conditional commands"""
     results = []
-    
-    for i, command_data in enumerate(commands):
+
+    for command_data in commands:
         try:
             # Handle both string commands and dictionary commands
             if isinstance(command_data, dict):
@@ -221,10 +275,91 @@ def execute_workflow_stage(workflow_execution, stage_name, commands):
             else:
                 original_command = command_data
                 regex_pattern = ''
-            
+
+            # Substitute variables in the command
+            final_command = substitute_variables_in_command(original_command, workflow_execution_obj)
+
+            # Create command execution record
+            cmd_exec = CommandExecution.objects.create(
+                workflow_execution=workflow_execution_obj,
+                command=original_command,
+                stage=stage_name,
+                status='running',
+                started_at=timezone.now()
+            )
+
+            # Execute command
+            success, output = execute_command_on_device(workflow_execution.device, final_command)
+
+            cmd_exec.status = 'completed' if success else 'failed'
+            cmd_exec.output = output
+            cmd_exec.completed_at = timezone.now()
+            cmd_exec.save()
+
+            results.append({
+                'command': original_command,
+                'final_command': final_command,
+                'success': success,
+                'output': output,
+                'validation_passed': True,
+                'regex_pattern': regex_pattern
+            })
+
+            # Extract and store variables from command output
+            if success and isinstance(command_data, dict):
+                extract_and_store_variables(command_data, output, workflow_execution_obj, stage_name, cmd_exec)
+
+            # Validate output if regex pattern exists
+            if regex_pattern and success:
+                validation_rule = {'regex': regex_pattern}
+                if isinstance(command_data, dict) and 'operator' in command_data:
+                    validation_rule['operator'] = command_data['operator']
+                validation_passed, validation_result = validate_output(output, validation_rule)
+                results[-1]['validation_passed'] = validation_passed
+                results[-1]['validation_result'] = validation_result
+                cmd_exec.validation_result = validation_result
+                cmd_exec.save()
+
+        except Exception as e:
+            logger.error(f"Error executing conditional command in {stage_name}: {e}")
+            CommandExecution.objects.create(
+                workflow_execution=workflow_execution_obj,
+                command=str(command_data),
+                stage=stage_name,
+                status='failed',
+                error_output=str(e),
+                completed_at=timezone.now()
+            )
+            results.append({
+                'command': str(command_data),
+                'success': False,
+                'error': str(e)
+            })
+
+    return results
+
+
+def execute_workflow_stage(workflow_execution, stage_name, commands):
+    """Execute a stage of the workflow (pre-check, implementation, post-check, rollback)"""
+    workflow = workflow_execution.workflow
+    device = workflow_execution.device
+    results = []
+
+    for i, command_data in enumerate(commands):
+        try:
+            # Handle both string commands and dictionary commands
+            if isinstance(command_data, dict):
+                original_command = command_data.get('command', '')
+                regex_pattern = command_data.get('regex_pattern', '')
+                condition = command_data.get('condition')
+            else:
+                original_command = command_data
+                regex_pattern = ''
+                condition = None
+
             # Substitute variables in the command
             final_command = substitute_variables_in_command(original_command, workflow_execution)
-            
+
             # Create command execution record
             cmd_exec = CommandExecution.objects.create(
                 workflow_execution=workflow_execution,
@@ -233,15 +368,15 @@ def execute_workflow_stage(workflow_execution, stage_name, commands):
                 status='running',
                 started_at=timezone.now()
             )
-            
+
             # Execute command
             success, output = execute_command_on_device(device, final_command)
-            
+
             cmd_exec.status = 'completed' if success else 'failed'
             cmd_exec.output = output
             cmd_exec.completed_at = timezone.now()
             cmd_exec.save()
-            
+
             results.append({
                 'command': original_command,
                 'final_command': final_command,  # Include the command after variable substitution
@@ -250,11 +385,11 @@ def execute_workflow_stage(workflow_execution, stage_name, commands):
                 'validation_passed': True,
                 'regex_pattern': regex_pattern
             })
-            
+
             # Extract and store variables from command output
             if success and isinstance(command_data, dict):
                 extract_and_store_variables(command_data, output, workflow_execution, stage_name, cmd_exec)
-            
+
             # Validate output if regex pattern exists
             if regex_pattern and success:
                 validation_rule = {'regex': regex_pattern}
@@ -276,24 +411,46 @@ def execute_workflow_stage(workflow_execution, stage_name, commands):
                 validation_passed, validation_result = validate_output(output, validation_rule)
                 results[-1]['validation_passed'] = validation_passed
                 results[-1]['validation_result'] = validation_result
-                
+
                 # Update command execution with validation results
                 cmd_exec.validation_result = validation_result
                 cmd_exec.save()
-                
+
                 # If validation failed, handle based on stage
                 if not validation_passed:
                     logger.warning(f"Validation failed for {stage_name}: {original_command}")
                     logger.warning(f"Regex pattern: {regex_pattern}")
                     logger.warning(f"Output: {output}")
-                    
+
                     if stage_name == 'pre_check':
                         # Pre-check validation failed - cancel workflow
                         return False
                     elif stage_name in ['implementation', 'post_check']:
                         # Implementation/Post-check validation failed - will trigger rollback
                         return False
-            
+
+            # Handle conditional logic
+            if condition and isinstance(command_data, dict):
+                # Determine exit code (0 for success, 1 for failure)
+                exit_code = 0 if success else 1
+
+                # Evaluate condition
+                condition_met = evaluate_condition(condition, output, exit_code, workflow_execution)
+
+                # Execute conditional commands
+                if condition_met and condition.get('then'):
+                    logger.info(f"Condition met for command '{original_command}', executing 'then' branch")
+                    then_results = execute_conditional_commands(
+                        workflow_execution, f"{stage_name}_conditional", condition['then'], workflow_execution
+                    )
+                    results.extend(then_results)
+                elif not condition_met and condition.get('else'):
+                    logger.info(f"Condition not met for command '{original_command}', executing 'else' branch")
+                    else_results = execute_conditional_commands(
+                        workflow_execution, f"{stage_name}_conditional", condition['else'], workflow_execution
+                    )
+                    results.extend(else_results)
+
         except Exception as e:
             logger.error(f"Error executing command in {stage_name}: {e}")
             # Create failed command execution record
@@ -310,11 +467,11 @@ def execute_workflow_stage(workflow_execution, stage_name, commands):
                 'success': False,
                 'error': str(e)
             })
-            
+
             # If this is a critical stage and command failed, stop execution
             if stage_name in ['pre_check', 'implementation', 'post_check']:
                 return False
-    
+
     # Store results in workflow execution
     stage_results = {f'{stage_name}_results': results}
     if stage_name == 'pre_check':
@@ -325,9 +482,9 @@ def execute_workflow_stage(workflow_execution, stage_name, commands):
         workflow_execution.set_post_check_results(stage_results)
     elif stage_name == 'rollback':
         workflow_execution.set_rollback_results(stage_results)
-    
+
     workflow_execution.save()
-    
+
     # Return True if all commands in this stage succeeded and passed validation
     return all(result.get('success', False) and result.get('validation_passed', True) for result in results)
 
@@ -348,3 +505,18 @@ def cleanup_old_executions():
     
     logger.info(f"Cleaned up {deleted_count} old workflow executions")
     return f"Cleaned up {deleted_count} old executions"
+
+
+@shared_task
+def execute_ansible_playbook_task(execution_id):
+    """Execute an Ansible playbook"""
+    from .ansible_utils import execute_ansible_playbook_task as ansible_execute
+    
+    try:
+        return ansible_execute(execution_id)
+    except Exception as e:
+        logger.error(f"Ansible playbook execution failed: {e}")
+        return {
+            'success': False,
+            'error': str(e)
+        }

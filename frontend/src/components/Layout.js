@@ -13,6 +13,7 @@ import {
   DocumentTextIcon,
   RectangleStackIcon,
   BellIcon,
+  CodeBracketIcon,
 } from '@heroicons/react/24/outline';
 
 const Layout = ({ children }) => {
@@ -25,6 +26,7 @@ const Layout = ({ children }) => {
     { name: 'Dashboard', href: '/dashboard', icon: HomeIcon },
     { name: 'Devices', href: '/devices', icon: DeviceTabletIcon },
     { name: 'Workflows', href: '/workflows', icon: Cog6ToothIcon },
+    { name: 'Ansible Workflows', href: '/ansible-workflows', icon: CodeBracketIcon },
     { name: 'Executions', href: '/executions', icon: PlayIcon },
     { name: 'Device Mapping', href: '/device-mapping', icon: RectangleStackIcon },
     { name: 'Logs', href: '/logs', icon: DocumentTextIcon },

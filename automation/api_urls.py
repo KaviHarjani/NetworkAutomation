@@ -1,5 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+
+from automation.ansible_api_views import AnsibleExecutionViewSet, AnsibleInventoryViewSet, AnsiblePlaybookViewSet
 from . import api_auth_views, api_views
 from .api_views import (
     device_grouping,
@@ -8,6 +10,13 @@ from .api_views import (
 )
 from .api_viewsets import (
     DeviceViewSet, WorkflowViewSet, ExecutionViewSet, LogViewSet
+)
+from .bpmn_viewsets import (
+    WorkflowNodeViewSet, WorkflowEdgeViewSet, BPMNWorkflowViewSet,
+    WorkflowExecutionPathViewSet
+)
+from .ansible_api_views import (
+    AnsiblePlaybookViewSet, AnsibleInventoryViewSet, AnsibleExecutionViewSet
 )
 
 app_name = 'automation_api'
@@ -18,6 +27,13 @@ router.register(r'devices', DeviceViewSet, basename='device')
 router.register(r'workflows', WorkflowViewSet, basename='workflow')
 router.register(r'executions', ExecutionViewSet, basename='execution')
 router.register(r'logs', LogViewSet, basename='log')
+router.register(r'workflow-nodes', WorkflowNodeViewSet, basename='workflow-node')
+router.register(r'workflow-edges', WorkflowEdgeViewSet, basename='workflow-edge')
+router.register(r'bpmn-workflows', BPMNWorkflowViewSet, basename='bpmn-workflow')
+router.register(r'execution-paths', WorkflowExecutionPathViewSet, basename='execution-path')
+router.register(r'ansible-playbooks', AnsiblePlaybookViewSet, basename='ansible-playbook')
+router.register(r'ansible-inventories', AnsibleInventoryViewSet, basename='ansible-inventory')
+router.register(r'ansible-executions', AnsibleExecutionViewSet, basename='ansible-execution')
 
 urlpatterns = [
     # Custom workflow create endpoint to match frontend expectations

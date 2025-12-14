@@ -61,15 +61,24 @@ const Workflows = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Workflows</h1>
-          <p className="text-gray-600 mt-1">Create and manage automation workflows</p>
+          <p className="text-gray-600 mt-1">Create and manage automation workflows with if/else logic</p>
         </div>
-        <Link
-          to="/workflows/create"
-          className="bg-red-600 text-white hover:bg-red-700 px-4 py-2 rounded-lg font-medium transition-colors duration-200 flex items-center"
-        >
-          <PlusIcon className="h-5 w-5 mr-2" />
-          Create Workflow
-        </Link>
+        <div className="flex space-x-3">
+          <Link
+            to="/workflows/create/enhanced"
+            className="bg-blue-600 text-white hover:bg-blue-700 px-4 py-2 rounded-lg font-medium transition-colors duration-200 flex items-center"
+          >
+            <PlusIcon className="h-5 w-5 mr-2" />
+            Enhanced Create
+          </Link>
+          <Link
+            to="/workflows/create"
+            className="bg-gray-600 text-white hover:bg-gray-700 px-4 py-2 rounded-lg font-medium transition-colors duration-200 flex items-center"
+          >
+            <PlusIcon className="h-5 w-5 mr-2" />
+            Basic Create
+          </Link>
+        </div>
       </div>
 
       {/* Filters */}
@@ -156,6 +165,14 @@ const Workflows = () => {
                   >
                     View
                   </Link>
+                  {workflow.has_bpmn && (
+                    <Link
+                      to={`/workflows/${workflow.id}/bpmn`}
+                      className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+                    >
+                      BPMN View
+                    </Link>
+                  )}
                   <Link
                     to={`/workflows/${workflow.id}/edit`}
                     className="text-red-600 hover:text-red-700 text-sm font-medium"

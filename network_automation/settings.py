@@ -24,10 +24,7 @@ DJANGO_APPS = [
 ]
 
 THIRD_PARTY_APPS = [
-    'crispy_forms',
-    'crispy_bootstrap5',
     'rest_framework',
-    'drf_spectacular',
 ]
 
 LOCAL_APPS = [

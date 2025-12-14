@@ -200,4 +200,56 @@ export const webhookAPI = {
   testWebhook: (webhookId) =>
     api.post(`/api/webhooks/${webhookId}/test/`),
 };
+
+// Ansible API
+export const ansibleAPI = {
+  // Playbook operations
+  getPlaybooks: (params = {}) =>
+    api.get('/api/ansible-playbooks/', { params }),
+
+  createPlaybook: (playbookData) =>
+    api.post('/api/ansible-playbooks/', playbookData),
+
+  updatePlaybook: (playbookId, playbookData) =>
+    api.put(`/api/ansible-playbooks/${playbookId}/`, playbookData),
+
+  deletePlaybook: (playbookId) =>
+    api.delete(`/api/ansible-playbooks/${playbookId}/`),
+
+  getPlaybook: (playbookId) =>
+    api.get(`/api/ansible-playbooks/${playbookId}/`),
+
+  validatePlaybook: (playbookContent) =>
+    api.post('/api/ansible-playbooks/validate/', { playbook_content: playbookContent }),
+
+  // Inventory operations
+  getInventories: (params = {}) =>
+    api.get('/api/ansible-inventories/', { params }),
+
+  createInventory: (inventoryData) =>
+    api.post('/api/ansible-inventories/', inventoryData),
+
+  updateInventory: (inventoryId, inventoryData) =>
+    api.put(`/api/ansible-inventories/${inventoryId}/`, inventoryData),
+
+  deleteInventory: (inventoryId) =>
+    api.delete(`/api/ansible-inventories/${inventoryId}/`),
+
+  getInventory: (inventoryId) =>
+    api.get(`/api/ansible-inventories/${inventoryId}/`),
+
+  validateInventory: (inventoryContent) =>
+    api.post('/api/ansible-inventories/validate/', { inventory_content: inventoryContent }),
+
+  // Execution operations
+  getExecutions: (params = {}) =>
+    api.get('/api/ansible-executions/', { params }),
+
+  getExecution: (executionId) =>
+    api.get(`/api/ansible-executions/${executionId}/`),
+
+  executePlaybook: (executionData) =>
+    api.post('/api/ansible-executions/execute/', executionData),
+};
+
 export default api;

@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import (
-    Device, Workflow, WorkflowExecution, SystemLog, CommandExecution
+    Device, Workflow, WorkflowExecution, SystemLog, CommandExecution,
+    WorkflowNode, WorkflowEdge, WorkflowExecutionPath, WorkflowVariable
 )
 
 
@@ -76,6 +77,7 @@ class WorkflowSerializer(serializers.ModelSerializer):
     command_counts = serializers.SerializerMethodField()
     required_dynamic_params = serializers.SerializerMethodField()
     has_dynamic_params = serializers.SerializerMethodField()
+    has_bpmn = serializers.SerializerMethodField()
     
     # Use getter methods instead of raw database fields for commands
     pre_check_commands = serializers.SerializerMethodField()
@@ -83,6 +85,10 @@ class WorkflowSerializer(serializers.ModelSerializer):
     post_check_commands = serializers.SerializerMethodField()
     rollback_commands = serializers.SerializerMethodField()
     validation_rules = serializers.SerializerMethodField()
+    
+    # BPMN workflow data
+    nodes = serializers.SerializerMethodField()
+    edges = serializers.SerializerMethodField()
     
     def get_pre_check_commands(self, obj):
         """Get parsed pre-check commands"""
@@ -138,6 +144,22 @@ class WorkflowSerializer(serializers.ModelSerializer):
         params = obj.get_required_dynamic_params()
         return len(params) > 0 if params else False
     
+    def get_has_bpmn(self, obj):
+        """Check if workflow has BPMN nodes/edges"""
+        return hasattr(obj, 'nodes') and obj.nodes.exists()
+    
+    def get_nodes(self, obj):
+        """Get BPMN nodes for this workflow"""
+        if hasattr(obj, 'nodes'):
+            return WorkflowNodeSerializer(obj.nodes.all(), many=True).data
+        return []
+    
+    def get_edges(self, obj):
+        """Get BPMN edges for this workflow"""
+        if hasattr(obj, 'edges'):
+            return WorkflowEdgeSerializer(obj.edges.all(), many=True).data
+        return []
+    
     class Meta:
         model = Workflow
         fields = [
@@ -145,12 +167,13 @@ class WorkflowSerializer(serializers.ModelSerializer):
             'implementation_commands', 'post_check_commands',
             'rollback_commands', 'validation_rules', 'created_by',
             'created_by_username', 'created_at', 'updated_at',
-            'command_counts', 'required_dynamic_params', 'has_dynamic_params'
+            'command_counts', 'required_dynamic_params', 'has_dynamic_params',
+            'has_bpmn', 'nodes', 'edges'
         ]
         read_only_fields = [
             'id', 'created_by', 'created_by_username', 'created_at',
             'updated_at', 'command_counts', 'required_dynamic_params',
-            'has_dynamic_params'
+            'has_dynamic_params', 'has_bpmn', 'nodes', 'edges'
         ]
 
 
@@ -284,3 +307,357 @@ class WorkflowExecutionResponseSerializer(serializers.Serializer):
 class ErrorResponseSerializer(serializers.Serializer):
     """Serializer for error responses"""
     error = serializers.CharField()
+
+
+class WorkflowNodeSerializer(serializers.ModelSerializer):
+    """Serializer for WorkflowNode model"""
+    condition_variables_list = serializers.SerializerMethodField()
+    
+    def get_condition_variables_list(self, obj):
+        """Get parsed condition variables as list"""
+        return obj.get_condition_variables()
+    
+    class Meta:
+        model = WorkflowNode
+        fields = [
+            'id', 'workflow', 'node_type', 'name', 'position_x', 'position_y',
+            'width', 'height', 'command', 'regex_pattern', 'operator',
+            'expected_output', 'stage', 'is_dynamic', 'store_in_variable',
+            'variable_description', 'condition_expression', 'condition_variables',
+            'condition_variables_list', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class WorkflowEdgeSerializer(serializers.ModelSerializer):
+    """Serializer for WorkflowEdge model"""
+    source_node_name = serializers.CharField(source='source_node.name', read_only=True)
+    target_node_name = serializers.CharField(source='target_node.name', read_only=True)
+    
+    class Meta:
+        model = WorkflowEdge
+        fields = [
+            'id', 'workflow', 'source_node', 'source_node_name', 'target_node',
+            'target_node_name', 'edge_type', 'label', 'condition_expression',
+            'position', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'source_node_name', 'target_node_name', 'created_at', 'updated_at']
+
+
+class WorkflowExecutionPathSerializer(serializers.ModelSerializer):
+    """Serializer for WorkflowExecutionPath model"""
+    node_name = serializers.CharField(source='node.name', read_only=True)
+    edge_label = serializers.CharField(source='edge_taken.label', read_only=True)
+    
+    class Meta:
+        model = WorkflowExecutionPath
+        fields = [
+            'id', 'workflow_execution', 'node', 'node_name', 'edge_taken',
+            'edge_label', 'condition_result', 'execution_order', 'executed_at'
+        ]
+        read_only_fields = ['id', 'node_name', 'edge_label', 'executed_at']
+
+
+class WorkflowVariableSerializer(serializers.ModelSerializer):
+    """Serializer for WorkflowVariable model"""
+    
+    class Meta:
+        model = WorkflowVariable
+        fields = [
+            'id', 'workflow_execution', 'name', 'value', 'description',
+            'source_command', 'source_stage', 'extracted_using_regex',
+            'is_active', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class BPMNWorkflowSerializer(serializers.Serializer):
+    """Serializer for complete BPMN workflow data"""
+    workflow = WorkflowSerializer()
+    nodes = WorkflowNodeSerializer(many=True)
+    edges = WorkflowEdgeSerializer(many=True)
+    
+    class Meta:
+        fields = ['workflow', 'nodes', 'edges']
+
+
+class WorkflowNodeCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating/updating WorkflowNode"""
+    condition_variables_list = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        write_only=True
+    )
+    
+    def create(self, validated_data):
+        condition_variables = validated_data.pop('condition_variables_list', [])
+        node = super().create(validated_data)
+        if condition_variables:
+            node.set_condition_variables(condition_variables)
+            node.save()
+        return node
+    
+    def update(self, instance, validated_data):
+        condition_variables = validated_data.pop('condition_variables_list', None)
+        node = super().update(instance, validated_data)
+        if condition_variables is not None:
+            node.set_condition_variables(condition_variables)
+            node.save()
+        return node
+    
+    class Meta:
+        model = WorkflowNode
+        fields = [
+            'id', 'node_type', 'name', 'position_x', 'position_y',
+            'width', 'height', 'command', 'regex_pattern', 'operator',
+            'expected_output', 'stage', 'is_dynamic', 'store_in_variable',
+            'variable_description', 'condition_expression', 'condition_variables_list'
+        ]
+
+
+class WorkflowEdgeCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating/updating WorkflowEdge"""
+    
+    class Meta:
+        model = WorkflowEdge
+        fields = [
+            'id', 'source_node', 'target_node', 'edge_type', 'label',
+            'condition_expression', 'position'
+        ]
+
+
+# Ansible serializers
+class AnsiblePlaybookSerializer(serializers.ModelSerializer):
+    """Serializer for AnsiblePlaybook model"""
+    created_by_username = serializers.CharField(
+        source='created_by.username', read_only=True
+    )
+    tags_list = serializers.SerializerMethodField()
+    variables_dict = serializers.SerializerMethodField()
+    
+    def get_tags_list(self, obj):
+        """Get parsed tags as list"""
+        return obj.get_tags()
+    
+    def get_variables_dict(self, obj):
+        """Get parsed variables as dict"""
+        return obj.get_variables()
+    
+    class Meta:
+        model = None  # Will be set after import
+        fields = [
+            'id', 'name', 'description', 'playbook_content', 'tags',
+            'variables', 'created_by', 'created_by_username',
+            'created_at', 'updated_at', 'tags_list', 'variables_dict'
+        ]
+        read_only_fields = [
+            'id', 'created_by', 'created_by_username',
+            'created_at', 'updated_at', 'tags_list', 'variables_dict'
+        ]
+
+
+class AnsibleInventorySerializer(serializers.ModelSerializer):
+    """Serializer for AnsibleInventory model"""
+    created_by_username = serializers.CharField(
+        source='created_by.username', read_only=True
+    )
+    group_variables_dict = serializers.SerializerMethodField()
+    host_variables_dict = serializers.SerializerMethodField()
+    
+    def get_group_variables_dict(self, obj):
+        """Get parsed group variables as dict"""
+        return obj.get_group_variables()
+    
+    def get_host_variables_dict(self, obj):
+        """Get parsed host variables as dict"""
+        return obj.get_host_variables()
+    
+    class Meta:
+        model = None  # Will be set after import
+        fields = [
+            'id', 'name', 'description', 'inventory_type', 'inventory_content',
+            'group_variables', 'host_variables', 'created_by',
+            'created_by_username', 'created_at', 'updated_at',
+            'group_variables_dict', 'host_variables_dict'
+        ]
+        read_only_fields = [
+            'id', 'created_by', 'created_by_username',
+            'created_at', 'updated_at', 'group_variables_dict', 'host_variables_dict'
+        ]
+
+
+class AnsibleExecutionSerializer(serializers.ModelSerializer):
+    """Serializer for AnsibleExecution model"""
+    playbook_name = serializers.CharField(source='playbook.name', read_only=True)
+    inventory_name = serializers.CharField(source='inventory.name', read_only=True)
+    created_by_username = serializers.CharField(
+        source='created_by.username', read_only=True
+    )
+    extra_vars_dict = serializers.SerializerMethodField()
+    tags_list = serializers.SerializerMethodField()
+    skip_tags_list = serializers.SerializerMethodField()
+    
+    def get_extra_vars_dict(self, obj):
+        """Get parsed extra vars as dict"""
+        return obj.get_extra_vars()
+    
+    def get_tags_list(self, obj):
+        """Get parsed tags as list"""
+        return obj.get_tags_list()
+    
+    def get_skip_tags_list(self, obj):
+        """Get parsed skip tags as list"""
+        return obj.get_skip_tags_list()
+    
+    class Meta:
+        model = None  # Will be set after import
+        fields = [
+            'id', 'playbook', 'playbook_name', 'inventory', 'inventory_name',
+            'status', 'extra_vars', 'tags', 'skip_tags', 'started_at',
+            'completed_at', 'execution_time', 'stdout', 'stderr', 'return_code',
+            'created_by', 'created_by_username', 'created_at',
+            'extra_vars_dict', 'tags_list', 'skip_tags_list'
+        ]
+        read_only_fields = [
+            'id', 'playbook_name', 'inventory_name', 'created_by_username',
+            'created_at', 'extra_vars_dict', 'tags_list', 'skip_tags_list'
+        ]
+
+
+class AnsibleExecutionHostSerializer(serializers.ModelSerializer):
+    """Serializer for AnsibleExecutionHost model"""
+    
+    class Meta:
+        model = None  # Will be set after import
+        fields = [
+            'id', 'execution', 'hostname', 'ip_address', 'status',
+            'task_name', 'stdout', 'stderr', 'return_code',
+            'execution_time', 'created_at'
+        ]
+        read_only_fields = ['id', 'created_at']
+
+
+class AnsiblePlaybookCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating AnsiblePlaybook"""
+    created_by_username = serializers.CharField(
+        source='created_by.username', read_only=True
+    )
+    tags_list = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        write_only=True
+    )
+    variables_dict = serializers.DictField(
+        required=False,
+        write_only=True
+    )
+    
+    def create(self, validated_data):
+        tags_list = validated_data.pop('tags_list', [])
+        variables_dict = validated_data.pop('variables_dict', {})
+        
+        playbook = super().create(validated_data)
+        
+        if tags_list:
+            playbook.set_tags(tags_list)
+        if variables_dict:
+            playbook.set_variables(variables_dict)
+        
+        playbook.save()
+        return playbook
+    
+    class Meta:
+        model = None  # Will be set after import
+        fields = [
+            'id', 'name', 'description', 'playbook_content',
+            'tags_list', 'variables_dict', 'created_by', 'created_by_username'
+        ]
+        read_only_fields = ['id', 'created_by', 'created_by_username']
+
+
+class AnsibleInventoryCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating AnsibleInventory"""
+    created_by_username = serializers.CharField(
+        source='created_by.username', read_only=True
+    )
+    group_variables_dict = serializers.DictField(
+        required=False,
+        write_only=True
+    )
+    host_variables_dict = serializers.DictField(
+        required=False,
+        write_only=True
+    )
+    
+    def create(self, validated_data):
+        group_variables_dict = validated_data.pop('group_variables_dict', {})
+        host_variables_dict = validated_data.pop('host_variables_dict', {})
+        
+        inventory = super().create(validated_data)
+        
+        if group_variables_dict:
+            inventory.set_group_variables(group_variables_dict)
+        if host_variables_dict:
+            inventory.set_host_variables(host_variables_dict)
+        
+        inventory.save()
+        return inventory
+    
+    class Meta:
+        model = None  # Will be set after import
+        fields = [
+            'id', 'name', 'description', 'inventory_type', 'inventory_content',
+            'group_variables_dict', 'host_variables_dict',
+            'created_by', 'created_by_username'
+        ]
+        read_only_fields = ['id', 'created_by', 'created_by_username']
+
+
+class AnsibleExecutionCreateSerializer(serializers.Serializer):
+    """Serializer for creating AnsibleExecution"""
+    playbook_id = serializers.UUIDField()
+    inventory_id = serializers.UUIDField()
+    extra_vars_dict = serializers.DictField(required=False, default=dict)
+    tags_list = serializers.ListField(
+        child=serializers.CharField(), required=False, default=list
+    )
+    skip_tags_list = serializers.ListField(
+        child=serializers.CharField(), required=False, default=list
+    )
+
+
+class AnsibleExecutionResponseSerializer(serializers.Serializer):
+    """Serializer for AnsibleExecution response"""
+    execution_id = serializers.UUIDField()
+    task_id = serializers.CharField()
+    message = serializers.CharField()
+
+
+class PaginatedAnsiblePlaybookSerializer(serializers.Serializer):
+    """Serializer for paginated Ansible playbook responses"""
+    playbooks = None  # Will be set after AnsiblePlaybookSerializer is created
+    total = serializers.IntegerField()
+    page = serializers.IntegerField()
+    per_page = serializers.IntegerField()
+    has_next = serializers.BooleanField()
+    has_previous = serializers.BooleanField()
+
+
+class PaginatedAnsibleInventorySerializer(serializers.Serializer):
+    """Serializer for paginated Ansible inventory responses"""
+    inventories = None  # Will be set after AnsibleInventorySerializer is created
+    total = serializers.IntegerField()
+    page = serializers.IntegerField()
+    per_page = serializers.IntegerField()
+    has_next = serializers.BooleanField()
+    has_previous = serializers.BooleanField()
+
+
+class PaginatedAnsibleExecutionSerializer(serializers.Serializer):
+    """Serializer for paginated Ansible execution responses"""
+    executions = None  # Will be set after AnsibleExecutionSerializer is created
+    total = serializers.IntegerField()
+    page = serializers.IntegerField()
+    per_page = serializers.IntegerField()
+    has_next = serializers.BooleanField()
+    has_previous = serializers.BooleanField()

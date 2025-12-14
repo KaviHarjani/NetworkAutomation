@@ -13,12 +13,14 @@ import Executions from './pages/Executions';
 import ExecutionDetail from './pages/ExecutionDetail';
 import CreateDevice from './pages/CreateDevice';
 import CreateWorkflow from './pages/CreateWorkflow';
+import EnhancedCreateWorkflow from './pages/EnhancedCreateWorkflow';
 import ExecuteWorkflow from './pages/ExecuteWorkflow';
 import WorkflowView from './pages/WorkflowView';
 import WorkflowEdit from './pages/WorkflowEdit';
 import Logs from './pages/Logs';
 import DeviceMapping from './pages/DeviceMapping';
 import WebhookConfigurations from './pages/WebhookConfigurations';
+import AnsibleWorkflows from './pages/AnsibleWorkflows';
 
 // Context
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -87,9 +89,11 @@ function AppRoutes() {
         <Route path="/devices/create" element={<CreateDevice />} />
         <Route path="/workflows" element={<Workflows />} />
         <Route path="/workflows/create" element={<CreateWorkflow />} />
+        <Route path="/workflows/create/enhanced" element={<EnhancedCreateWorkflow />} />
         <Route path="/workflows/:id" element={<WorkflowView />} />
         <Route path="/workflows/:id/edit" element={<WorkflowEdit />} />
         <Route path="/workflows/execute" element={<ExecuteWorkflow />} />
+        <Route path="/ansible-workflows" element={<AnsibleWorkflows />} />
         <Route path="/executions" element={<Executions />} />
         <Route path="/executions/:id" element={<ExecutionDetail />} />
         <Route path="/logs" element={<Logs />} />

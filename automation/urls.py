@@ -12,9 +12,17 @@ urlpatterns = [
     path('devices/create/', views.react_app_view, name='create_device'),
     path('workflows/', views.react_app_view, name='workflow_list'),
     path('workflows/create/', views.react_app_view, name='create_workflow'),
+    path('workflows/create/enhanced/', views.react_app_view, name='create_workflow_enhanced'),
     path('workflows/execute/', views.react_app_view, name='workflow_execute'),
     path('executions/', views.react_app_view, name='execution_list'),
-    path('executions/<str:execution_id>/', views.react_app_view, name='execution_detail'),
+    path(
+        'executions/<str:execution_id>/',
+        views.react_app_view,
+        name='execution_detail'
+    ),
+    
+    # Catch-all route for React Router (must be last)
+    path('<path:path>', views.react_app_view, name='react_catch_all'),
     
     # Legacy Django template routes (can be removed after full migration)
     # path('', views.dashboard_view, name='dashboard'),
