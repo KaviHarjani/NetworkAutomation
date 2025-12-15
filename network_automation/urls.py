@@ -6,21 +6,11 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib.auth import views as auth_views
-from drf_spectacular.views import (
-    SpectacularAPIView,
-    SpectacularRedocView
-)
-from automation.views_swagger import CustomSpectacularSwaggerView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('', include('automation.urls')),
     path('api/', include('automation.api_urls')),
-    
-    # Swagger/OpenAPI documentation
-    path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
-    path('api/docs/', CustomSpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
-    path('api/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
+    path('', include('automation.urls')),
 ]
 
 if settings.DEBUG:

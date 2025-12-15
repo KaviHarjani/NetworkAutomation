@@ -14,16 +14,30 @@ class CORSMiddleware:
     
     def __call__(self, request):
         response = self.get_response(request)
-        
-        # Add CORS headers
-        origin = request.headers.get('Origin', '*')
-        response['Access-Control-Allow-Origin'] = origin
-        response['Access-Control-Allow-Credentials'] = 'true'
+
+        # Get allowed origins from settings
+        from django.conf import settings
+        allowed_origins = getattr(settings, 'CORS_ALLOWED_ORIGINS', [])
+
+        # Get the request origin
+        origin = request.headers.get('Origin')
+
+        # Set CORS headers based on origin
+        if origin and origin in allowed_origins:
+            response['Access-Control-Allow-Origin'] = origin
+            response['Access-Control-Allow-Credentials'] = 'true'
+        elif not origin:
+            # Same-origin request, no CORS headers needed
+            pass
+        else:
+            # Origin not allowed, don't set CORS headers
+            pass
+
         response['Access-Control-Allow-Methods'] = (
             'GET, POST, PUT, DELETE, OPTIONS'
         )
         response['Access-Control-Allow-Headers'] = (
             'Content-Type, Authorization, X-Requested-With, X-CSRFToken'
         )
-        
+
         return response

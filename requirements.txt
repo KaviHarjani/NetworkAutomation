@@ -1,4 +1,6 @@
 amqp==5.3.1
+ansible==9.1.0
+ansible-core==2.16.15
 asgiref==3.7.2
 attrs==25.4.0
 autobahn==25.12.1
@@ -30,9 +32,11 @@ hyperlink==21.0.0
 idna==3.11
 Incremental==24.11.0
 inflection==0.5.1
+Jinja2==3.1.6
 jsonschema==4.25.1
 jsonschema-specifications==2025.9.1
 kombu==5.6.1
+MarkupSafe==3.0.3
 msgpack==1.1.2
 packaging==25.0
 paramiko==3.3.1
@@ -51,6 +55,7 @@ PyYAML==6.0.3
 redis==5.0.1
 referencing==0.37.0
 requests==2.32.5
+resolvelib==1.0.1
 rpds-py==0.30.0
 service-identity==24.2.0
 six==1.17.0

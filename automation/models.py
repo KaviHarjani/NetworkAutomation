@@ -68,8 +68,9 @@ class Workflow(models.Model):
     rollback_commands = models.TextField(default='[]', blank=True)
     required_dynamic_params = models.TextField(default='[]', blank=True, help_text="List of commands that require dynamic parameters")
     
-    # Each command will be stored as: {"command": "...", "regex_pattern": "..."}
+    # Each command will be stored as: {"command": "...", "regex_pattern": "...", "condition": {...}}
     validation_rules = models.TextField(default='{}', blank=True)
+    conditional_logic = models.TextField(default='{}', blank=True, help_text="Conditional execution logic for commands")
     created_by = models.ForeignKey(User, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -479,3 +480,308 @@ class WorkflowVariable(models.Model):
         if len(self.value) <= 100:
             return self.value
         return self.value[:97] + "..."
+
+
+class WorkflowNode(models.Model):
+    """Model for BPMN workflow nodes (steps, conditions, etc.)"""
+    NODE_TYPES = [
+        ('command', 'Command'),
+        ('condition', 'If/Else Condition'),
+        ('start', 'Start'),
+        ('end', 'End'),
+        ('parallel_gateway', 'Parallel Gateway'),
+        ('merge_gateway', 'Merge Gateway'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    workflow = models.ForeignKey(Workflow, on_delete=models.CASCADE, related_name='nodes')
+    node_type = models.CharField(max_length=20, choices=NODE_TYPES)
+    name = models.CharField(max_length=200, help_text="Human-readable node name")
+    position_x = models.FloatField(default=0, help_text="X position in BPMN canvas")
+    position_y = models.FloatField(default=0, help_text="Y position in BPMN canvas")
+    width = models.FloatField(default=150, help_text="Node width")
+    height = models.FloatField(default=80, help_text="Node height")
+    
+    # For command nodes
+    command = models.TextField(blank=True, help_text="Command to execute")
+    regex_pattern = models.TextField(blank=True, help_text="Regex pattern for output validation")
+    operator = models.CharField(max_length=20, default='contains', help_text="Validation operator")
+    expected_output = models.TextField(blank=True, help_text="Expected output for testing")
+    stage = models.CharField(max_length=20, blank=True, help_text="Command stage (pre_check, implementation, etc.)")
+    is_dynamic = models.BooleanField(default=False, help_text="Whether command uses dynamic parameters")
+    store_in_variable = models.CharField(max_length=100, blank=True, help_text="Variable name to store output")
+    variable_description = models.TextField(blank=True, help_text="Description of stored variable")
+    
+    # For condition nodes
+    condition_expression = models.TextField(blank=True, help_text="Condition expression (e.g., '{variable_name} == \"value\"')")
+    condition_variables = models.TextField(default='[]', blank=True, help_text="JSON array of variables used in condition")
+    
+    # Metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['workflow', 'position_x', 'position_y']
+        indexes = [
+            models.Index(fields=['workflow', 'node_type']),
+            models.Index(fields=['workflow', 'position_x', 'position_y']),
+        ]
+    
+    def __str__(self):
+        return f"{self.name} ({self.node_type})"
+    
+    def get_condition_variables(self):
+        """Parse JSON condition variables"""
+        try:
+            return json.loads(self.condition_variables) if self.condition_variables else []
+        except (json.JSONDecodeError, TypeError):
+            return []
+    
+    def set_condition_variables(self, variables):
+        """Store condition variables as JSON"""
+        self.condition_variables = json.dumps(variables)
+
+
+class WorkflowEdge(models.Model):
+    """Model for BPMN workflow edges (connections between nodes)"""
+    EDGE_TYPES = [
+        ('sequence', 'Sequence Flow'),
+        ('condition_true', 'True Condition'),
+        ('condition_false', 'False Condition'),
+        ('parallel', 'Parallel Flow'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    workflow = models.ForeignKey(Workflow, on_delete=models.CASCADE, related_name='edges')
+    source_node = models.ForeignKey(WorkflowNode, on_delete=models.CASCADE, related_name='outgoing_edges')
+    target_node = models.ForeignKey(WorkflowNode, on_delete=models.CASCADE, related_name='incoming_edges')
+    edge_type = models.CharField(max_length=20, choices=EDGE_TYPES, default='sequence')
+    label = models.CharField(max_length=200, blank=True, help_text="Edge label (e.g., 'Yes', 'No')")
+    condition_expression = models.TextField(blank=True, help_text="Edge condition expression")
+    position = models.JSONField(default=dict, help_text="Edge routing points for curved lines")
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['workflow', 'source_node', 'target_node']
+        unique_together = ['workflow', 'source_node', 'target_node']
+        indexes = [
+            models.Index(fields=['workflow', 'source_node']),
+            models.Index(fields=['workflow', 'target_node']),
+        ]
+    
+    def __str__(self):
+        return f"{self.source_node.name} → {self.target_node.name} ({self.edge_type})"
+
+
+class WorkflowExecutionPath(models.Model):
+    """Model for tracking which path was taken during workflow execution"""
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    workflow_execution = models.ForeignKey(WorkflowExecution, on_delete=models.CASCADE, related_name='execution_paths')
+    node = models.ForeignKey(WorkflowNode, on_delete=models.CASCADE)
+    edge_taken = models.ForeignKey(WorkflowEdge, on_delete=models.CASCADE, null=True, blank=True)
+    condition_result = models.BooleanField(null=True, blank=True, help_text="Result of condition evaluation")
+    execution_order = models.IntegerField(help_text="Order in which this node was executed")
+    executed_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['workflow_execution', 'execution_order']
+        unique_together = ['workflow_execution', 'execution_order']
+        indexes = [
+            models.Index(fields=['workflow_execution', 'execution_order']),
+            models.Index(fields=['workflow_execution', 'node']),
+        ]
+    
+    def __str__(self):
+        return f"{self.workflow_execution} - Step {self.execution_order}: {self.node.name}"
+
+
+class AnsiblePlaybook(models.Model):
+    """Model for storing Ansible playbooks"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True)
+    playbook_content = models.TextField(help_text="YAML content of the Ansible playbook")
+    tags = models.TextField(default='[]', blank=True, help_text="JSON array of tags")
+    variables = models.TextField(default='{}', blank=True, help_text="JSON object of default variables")
+    created_by = models.ForeignKey(User, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+    
+    def get_tags(self):
+        """Parse JSON tags from text field"""
+        try:
+            return json.loads(self.tags) if self.tags else []
+        except (json.JSONDecodeError, TypeError):
+            return []
+    
+    def set_tags(self, tags):
+        """Store tags as JSON in text field"""
+        self.tags = json.dumps(tags)
+    
+    def get_variables(self):
+        """Parse JSON variables from text field"""
+        try:
+            return json.loads(self.variables) if self.variables else {}
+        except (json.JSONDecodeError, TypeError):
+            return {}
+    
+    def set_variables(self, variables):
+        """Store variables as JSON in text field"""
+        self.variables = json.dumps(variables)
+    
+    def __str__(self):
+        return self.name
+
+
+class AnsibleInventory(models.Model):
+    """Model for storing Ansible inventory groups and hosts"""
+    INVENTORY_TYPES = [
+        ('static', 'Static Inventory'),
+        ('dynamic', 'Dynamic Inventory'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True)
+    inventory_type = models.CharField(max_length=20, choices=INVENTORY_TYPES, default='static')
+    inventory_content = models.TextField(help_text="YAML/INI content of the inventory or script for dynamic")
+    group_variables = models.TextField(default='{}', blank=True, help_text="JSON object of group variables")
+    host_variables = models.TextField(default='{}', blank=True, help_text="JSON object of host variables")
+    created_by = models.ForeignKey(User, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+    
+    def get_group_variables(self):
+        """Parse JSON group variables from text field"""
+        try:
+            return json.loads(self.group_variables) if self.group_variables else {}
+        except (json.JSONDecodeError, TypeError):
+            return {}
+    
+    def set_group_variables(self, variables):
+        """Store group variables as JSON in text field"""
+        self.group_variables = json.dumps(variables)
+    
+    def get_host_variables(self):
+        """Parse JSON host variables from text field"""
+        try:
+            return json.loads(self.host_variables) if self.host_variables else {}
+        except (json.JSONDecodeError, TypeError):
+            return {}
+    
+    def set_host_variables(self, variables):
+        """Store host variables as JSON in text field"""
+        self.host_variables = json.dumps(variables)
+    
+    def __str__(self):
+        return f"{self.name} ({self.inventory_type})"
+
+
+class AnsibleExecution(models.Model):
+    """Model for tracking Ansible playbook executions"""
+    EXECUTION_STATUS = [
+        ('pending', 'Pending'),
+        ('running', 'Running'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+        ('cancelled', 'Cancelled'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    playbook = models.ForeignKey(AnsiblePlaybook, on_delete=models.CASCADE)
+    inventory = models.ForeignKey(AnsibleInventory, on_delete=models.CASCADE)
+    status = models.CharField(max_length=20, choices=EXECUTION_STATUS, default='pending')
+    extra_vars = models.TextField(default='{}', blank=True, help_text="JSON object of extra variables")
+    tags = models.TextField(default='[]', blank=True, help_text="JSON array of tags to run")
+    skip_tags = models.TextField(default='[]', blank=True, help_text="JSON array of tags to skip")
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    execution_time = models.FloatField(null=True, blank=True)
+    stdout = models.TextField(blank=True)
+    stderr = models.TextField(blank=True)
+    return_code = models.IntegerField(null=True, blank=True)
+    created_by = models.ForeignKey(User, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+    
+    def get_extra_vars(self):
+        """Parse JSON extra vars from text field"""
+        try:
+            return json.loads(self.extra_vars) if self.extra_vars else {}
+        except (json.JSONDecodeError, TypeError):
+            return {}
+    
+    def set_extra_vars(self, variables):
+        """Store extra vars as JSON in text field"""
+        self.extra_vars = json.dumps(variables)
+    
+    def get_tags_list(self):
+        """Parse JSON tags from text field"""
+        try:
+            return json.loads(self.tags) if self.tags else []
+        except (json.JSONDecodeError, TypeError):
+            return []
+    
+    def set_tags_list(self, tags):
+        """Store tags as JSON in text field"""
+        self.tags = json.dumps(tags)
+    
+    def get_skip_tags_list(self):
+        """Parse JSON skip tags from text field"""
+        try:
+            return json.loads(self.skip_tags) if self.skip_tags else []
+        except (json.JSONDecodeError, TypeError):
+            return []
+    
+    def set_skip_tags_list(self, tags):
+        """Store skip tags as JSON in text field"""
+        self.skip_tags = json.dumps(tags)
+    
+    def __str__(self):
+        return f"{self.playbook.name} - {self.status}"
+
+
+class AnsibleExecutionHost(models.Model):
+    """Model for tracking individual host results in Ansible execution"""
+    HOST_STATUS = [
+        ('pending', 'Pending'),
+        ('running', 'Running'),
+        ('ok', 'OK'),
+        ('changed', 'Changed'),
+        ('failed', 'Failed'),
+        ('unreachable', 'Unreachable'),
+        ('skipped', 'Skipped'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    execution = models.ForeignKey(AnsibleExecution, on_delete=models.CASCADE, related_name='host_results')
+    hostname = models.CharField(max_length=255)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=HOST_STATUS, default='pending')
+    task_name = models.CharField(max_length=255, blank=True)
+    stdout = models.TextField(blank=True)
+    stderr = models.TextField(blank=True)
+    return_code = models.IntegerField(null=True, blank=True)
+    execution_time = models.FloatField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['execution', 'hostname', 'task_name']
+        indexes = [
+            models.Index(fields=['execution', 'hostname']),
+            models.Index(fields=['execution', 'status']),
+        ]
+    
+    def __str__(self):
+        return f"{self.hostname} - {self.status}"

@@ -13,12 +13,20 @@ import Executions from './pages/Executions';
 import ExecutionDetail from './pages/ExecutionDetail';
 import CreateDevice from './pages/CreateDevice';
 import CreateWorkflow from './pages/CreateWorkflow';
+import EnhancedCreateWorkflow from './pages/EnhancedCreateWorkflow';
 import ExecuteWorkflow from './pages/ExecuteWorkflow';
 import WorkflowView from './pages/WorkflowView';
 import WorkflowEdit from './pages/WorkflowEdit';
 import Logs from './pages/Logs';
 import DeviceMapping from './pages/DeviceMapping';
 import WebhookConfigurations from './pages/WebhookConfigurations';
+import AnsibleWorkflows from './pages/AnsibleWorkflows';
+import AnsiblePlaybookCreate from './pages/AnsiblePlaybookCreate';
+import AnsiblePlaybookView from './pages/AnsiblePlaybookView';
+import AnsiblePlaybookEdit from './pages/AnsiblePlaybookEdit';
+import AnsibleInventoryCreate from './pages/AnsibleInventoryCreate';
+import AnsibleInventoryView from './pages/AnsibleInventoryView';
+import AnsibleInventoryEdit from './pages/AnsibleInventoryEdit';
 
 // Context
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -87,9 +95,17 @@ function AppRoutes() {
         <Route path="/devices/create" element={<CreateDevice />} />
         <Route path="/workflows" element={<Workflows />} />
         <Route path="/workflows/create" element={<CreateWorkflow />} />
+        <Route path="/workflows/create/enhanced" element={<EnhancedCreateWorkflow />} />
         <Route path="/workflows/:id" element={<WorkflowView />} />
         <Route path="/workflows/:id/edit" element={<WorkflowEdit />} />
         <Route path="/workflows/execute" element={<ExecuteWorkflow />} />
+        <Route path="/ansible-workflows" element={<AnsibleWorkflows />} />
+        <Route path="/ansible-playbook-create" element={<AnsiblePlaybookCreate />} />
+        <Route path="/ansible-playbook-view/:id" element={<AnsiblePlaybookView />} />
+        <Route path="/ansible-playbook-edit/:id" element={<AnsiblePlaybookEdit />} />
+        <Route path="/ansible-inventory-create" element={<AnsibleInventoryCreate />} />
+        <Route path="/ansible-inventory-view/:id" element={<AnsibleInventoryView />} />
+        <Route path="/ansible-inventory-edit/:id" element={<AnsibleInventoryEdit />} />
         <Route path="/executions" element={<Executions />} />
         <Route path="/executions/:id" element={<ExecutionDetail />} />
         <Route path="/logs" element={<Logs />} />

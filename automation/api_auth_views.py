@@ -3,29 +3,40 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.contrib.auth import authenticate, login, logout
 from django.conf import settings
+from django.middleware.csrf import get_token
 import json
 
 
-def create_cors_response(data, status=200):
+def create_cors_response(data, status=200, request=None):
     """Create JSON response with CORS headers"""
     response = JsonResponse(data, status=status)
-    
-    # Get the origin from request or use a specific origin for development
-    origin = getattr(settings, 'CORS_ALLOW_ORIGIN', '*')
-    
-    response['Access-Control-Allow-Origin'] = origin
-    response['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+
+    # Get allowed origins from settings
+    allowed_origins = getattr(settings, 'CORS_ALLOWED_ORIGINS', [])
+
+    # For credentials, we need to set specific origin, not '*'
+    origin = None
+    if request:
+        request_origin = request.META.get('HTTP_ORIGIN')
+        if request_origin in allowed_origins:
+            origin = request_origin
+
+    if origin:
+        response['Access-Control-Allow-Origin'] = origin
+        response['Access-Control-Allow-Credentials'] = 'true'
+
+    methods = 'GET, POST, PUT, DELETE, OPTIONS'
+    response['Access-Control-Allow-Methods'] = methods
     response['Access-Control-Allow-Headers'] = (
         'Content-Type, Authorization, X-Requested-With, X-CSRFToken'
     )
-    response['Access-Control-Allow-Credentials'] = 'true'
     response['Access-Control-Allow-Age'] = '86400'  # 24 hours
-    
+
     return response
 
 
 @csrf_exempt
-@require_http_methods(["POST", "OPTIONS"])
+@require_http_methods(["GET", "POST", "OPTIONS"])
 def api_login(request):
     """API endpoint for user login"""
     # Handle CORS preflight request
@@ -140,5 +151,15 @@ def api_csrf_token(request):
         response['Access-Control-Max-Age'] = '86400'
         return response
     
-    # Return CSRF token - Django automatically sets this cookie
-    return create_cors_response({'message': 'CSRF token set'})
+    # Ensure session is created
+    if not request.session.session_key:
+        request.session.create()
+    
+    # Get the CSRF token - this will set the cookie
+    csrf_token = get_token(request)
+    
+    # Return success response - Django has already set the CSRF cookie
+    return create_cors_response({
+        'message': 'CSRF token set',
+        'csrf_token': csrf_token
+    })

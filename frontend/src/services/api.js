@@ -14,6 +14,7 @@ function getCookie(name) {
       }
     }
   }
+  console.log('API: getCookie result for', name + ':', cookieValue ? 'found (length: ' + cookieValue.length + ')' : 'not found');
   return cookieValue;
 }
 
@@ -33,45 +34,105 @@ api.interceptors.request.use(
     const csrftoken = getCookie('csrftoken');
     if (csrftoken) {
       config.headers['X-CSRFToken'] = csrftoken;
+      console.log('API: Added CSRF token to request:', {
+        url: config.url,
+        method: config.method,
+        hasToken: !!csrftoken
+      });
+    } else {
+      console.warn('API: No CSRF token found in cookies for request:', {
+        url: config.url,
+        method: config.method,
+        allCookies: document.cookie ? 'cookies present' : 'no cookies'
+      });
     }
     return config;
   },
   (error) => {
+    console.error('API: Request interceptor error:', error);
     return Promise.reject(error);
   }
 );
 
 // Response interceptor to handle common errors - DISABLED REDIRECT FOR TESTING
 api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    console.log('API Error Interceptor:', {
-      url: error.config?.url,
-      status: error.response?.status,
-      pathname: window.location.pathname
+  (response) => {
+    console.log('API: Successful response:', {
+      url: response.config?.url,
+      status: response.status,
+      method: response.config?.method
     });
-    
-    if (error.response?.status === 401) {
+    return response;
+  },
+  (error) => {
+    console.log('API: Error Interceptor triggered:', {
+      url: error.config?.url,
+      method: error.config?.method,
+      status: error.response?.status,
+      pathname: window.location.pathname,
+      errorMessage: error.message,
+      responseData: error.response?.data
+    });
+
+    if (error.response?.status === 403) {
+      // CSRF verification failed
+      console.error('API: CSRF verification failed (403) for:', {
+        url: error.config?.url,
+        method: error.config?.method,
+        hasCsrfHeader: !!error.config?.headers['X-CSRFToken']
+      });
+
+      // If this is not already a CSRF token request, try to refresh the token
+      if (!error.config.url.includes('/csrf-token/')) {
+        console.log('API: Attempting to refresh CSRF token due to 403 error...');
+        return authAPI.getCsrfToken()
+          .then((csrfResponse) => {
+            console.log('API: CSRF token refreshed successfully:', csrfResponse.data);
+            // Retry the original request
+            const csrftoken = getCookie('csrftoken');
+            if (csrftoken) {
+              error.config.headers['X-CSRFToken'] = csrftoken;
+              console.log('API: Retrying original request with new CSRF token');
+              return api.request(error.config);
+            } else {
+              console.error('API: No CSRF token found after refresh, cannot retry');
+              throw error;
+            }
+          })
+          .catch((refreshError) => {
+            console.error('API: CSRF token refresh failed:', refreshError);
+            // If CSRF refresh fails, show error message
+            toast.error('Session expired. Please refresh the page and try again.');
+            throw error;
+          });
+      } else {
+        console.log('API: 403 error on CSRF token endpoint itself, not retrying');
+      }
+    } else if (error.response?.status === 401) {
       // TEMPORARILY DISABLED - Don't redirect for auth endpoints
       // Only redirect to login if not already on login page and not during auth check
       const isAuthEndpoint = error.config.url.includes('/api/auth/');
       const isLoginPage = window.location.pathname === '/login';
-      
-      console.log('Auth check:', { isAuthEndpoint, isLoginPage });
-      
+
+      console.log('API: 401 error - Auth check:', { isAuthEndpoint, isLoginPage, url: error.config?.url });
+
       // Don't redirect if we're already on login page or checking authentication
       if (!isLoginPage && !isAuthEndpoint) {
-        console.log('Redirecting to login...');
+        console.log('API: Redirecting to login due to 401...');
         // Unauthorized - redirect to login for protected routes
         window.location.href = '/login';
       } else {
-        console.log('Skipping redirect...');
+        console.log('API: Skipping redirect for 401 error');
       }
     } else if (error.response?.status >= 500) {
       // Server error
+      console.log('API: Server error (>=500), showing toast');
       toast.error('Server error. Please try again later.');
     } else if (error.message === 'Network Error') {
+      console.log('API: Network error, showing toast');
       toast.error('Network error. Please check your connection.');
+    } else {
+      console.log('API: Unhandled error type:', error.message);
     }
     return Promise.reject(error);
   }
@@ -200,4 +261,56 @@ export const webhookAPI = {
   testWebhook: (webhookId) =>
     api.post(`/api/webhooks/${webhookId}/test/`),
 };
+
+// Ansible API
+export const ansibleAPI = {
+  // Playbook operations
+  getPlaybooks: (params = {}) =>
+    api.get('/api/ansible-playbooks/', { params }),
+
+  createPlaybook: (playbookData) =>
+    api.post('/api/ansible-playbooks/', playbookData),
+
+  updatePlaybook: (playbookId, playbookData) =>
+    api.put(`/api/ansible-playbooks/${playbookId}/`, playbookData),
+
+  deletePlaybook: (playbookId) =>
+    api.delete(`/api/ansible-playbooks/${playbookId}/`),
+
+  getPlaybook: (playbookId) =>
+    api.get(`/api/ansible-playbooks/${playbookId}/`),
+
+  validatePlaybook: (playbookContent) =>
+    api.post('/api/ansible-playbooks/validate/', { playbook_content: playbookContent }),
+
+  // Inventory operations
+  getInventories: (params = {}) =>
+    api.get('/api/ansible-inventories/', { params }),
+
+  createInventory: (inventoryData) =>
+    api.post('/api/ansible-inventories/', inventoryData),
+
+  updateInventory: (inventoryId, inventoryData) =>
+    api.put(`/api/ansible-inventories/${inventoryId}/`, inventoryData),
+
+  deleteInventory: (inventoryId) =>
+    api.delete(`/api/ansible-inventories/${inventoryId}/`),
+
+  getInventory: (inventoryId) =>
+    api.get(`/api/ansible-inventories/${inventoryId}/`),
+
+  validateInventory: (inventoryContent) =>
+    api.post('/api/ansible-inventories/validate/', { inventory_content: inventoryContent }),
+
+  // Execution operations
+  getExecutions: (params = {}) =>
+    api.get('/api/ansible-executions/', { params }),
+
+  getExecution: (executionId) =>
+    api.get(`/api/ansible-executions/${executionId}/`),
+
+  executePlaybook: (executionData) =>
+    api.post('/api/ansible-executions/execute/', executionData),
+};
+
 export default api;

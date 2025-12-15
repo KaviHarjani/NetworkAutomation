@@ -13,6 +13,13 @@ DEBUG = config('DEBUG', default=True, cast=bool)
 
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1', cast=Csv())
 
+CSRF_TRUSTED_ORIGINS = [
+    'http://127.0.0.1:8000',
+    'http://localhost:8000',
+    'http://127.0.0.1:3000',
+    'http://localhost:3000',
+]
+
 # Application definition
 DJANGO_APPS = [
     'django.contrib.admin',
@@ -24,10 +31,7 @@ DJANGO_APPS = [
 ]
 
 THIRD_PARTY_APPS = [
-    'crispy_forms',
-    'crispy_bootstrap5',
     'rest_framework',
-    'drf_spectacular',
 ]
 
 LOCAL_APPS = [
@@ -41,7 +45,7 @@ MIDDLEWARE = [
     'django.contrib.sessions.middleware.SessionMiddleware',
     'network_automation.cors_middleware.CORSMiddleware',
     'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
+    # 'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
@@ -126,7 +130,7 @@ SESSION_COOKIE_SAMESITE = 'Lax'  # Allows cookies for same-site and safe cross-s
 SESSION_COOKIE_AGE = 1209600  # 2 weeks in seconds
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False  # Keep session until expiration
 SESSION_SAVE_EVERY_REQUEST = True  # Save session on every request
-CRISPY_TEMPLATE_PACK = "bootstrap5"
+
 
 # Redis Configuration
 REDIS_URL = config('REDIS_URL', default='redis://localhost:6379/0')

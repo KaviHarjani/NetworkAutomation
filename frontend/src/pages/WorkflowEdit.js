@@ -81,7 +81,8 @@ const WorkflowEdit = () => {
         description: '',
         regex_pattern: '',
         operator: 'contains',
-        expected_exit_code: null
+        expected_exit_code: null,
+        condition: null // For conditional logic
       }],
     }));
   };
@@ -277,6 +278,209 @@ const WorkflowEdit = () => {
                         min="0"
                         max="255"
                       />
+                    </div>
+                  </div>
+
+                  {/* Conditional Logic Section */}
+                  <div className="border-t pt-4">
+                    <h4 className="text-sm font-medium text-gray-700 mb-3">Conditional Logic (Optional)</h4>
+                    <p className="text-xs text-gray-500 mb-3">
+                      Define conditions to execute different commands based on this command's result
+                    </p>
+
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          Condition Type
+                        </label>
+                        <select
+                          value={command?.condition?.type || ''}
+                          onChange={(e) => {
+                            const conditionType = e.target.value;
+                            updateCommand(sectionKey, index, 'condition', conditionType ? {
+                              type: conditionType,
+                              pattern: '',
+                              operator: 'contains',
+                              then: [],
+                              else: []
+                            } : null);
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm"
+                        >
+                          <option value="">No condition</option>
+                          <option value="if_regex_matches">If regex matches</option>
+                          <option value="if_exit_code_equals">If exit code equals</option>
+                          <option value="if_output_contains">If output contains</option>
+                          <option value="if_variable_equals">If variable equals</option>
+                        </select>
+                      </div>
+
+                      {command?.condition && (
+                        <>
+                          {/* Condition Parameters */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {command.condition.type === 'if_regex_matches' && (
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">
+                                  Pattern to Match
+                                </label>
+                                <input
+                                  type="text"
+                                  value={command.condition.pattern || ''}
+                                  onChange={(e) => updateCommand(sectionKey, index, 'condition', {
+                                    ...command.condition,
+                                    pattern: e.target.value
+                                  })}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm font-mono"
+                                  placeholder="Enter pattern..."
+                                />
+                              </div>
+                            )}
+
+                            {command.condition.type === 'if_exit_code_equals' && (
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">
+                                  Expected Exit Code
+                                </label>
+                                <input
+                                  type="number"
+                                  value={command.condition.exit_code || ''}
+                                  onChange={(e) => updateCommand(sectionKey, index, 'condition', {
+                                    ...command.condition,
+                                    exit_code: parseInt(e.target.value) || 0
+                                  })}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm"
+                                  min="0"
+                                  max="255"
+                                />
+                              </div>
+                            )}
+
+                            {command.condition.type === 'if_output_contains' && (
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">
+                                  Text to Contain
+                                </label>
+                                <input
+                                  type="text"
+                                  value={command.condition.text || ''}
+                                  onChange={(e) => updateCommand(sectionKey, index, 'condition', {
+                                    ...command.condition,
+                                    text: e.target.value
+                                  })}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm"
+                                  placeholder="Enter text..."
+                                />
+                              </div>
+                            )}
+
+                            {command.condition.type === 'if_variable_equals' && (
+                              <>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                                    Variable Name
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={command.condition.variable_name || ''}
+                                    onChange={(e) => updateCommand(sectionKey, index, 'condition', {
+                                      ...command.condition,
+                                      variable_name: e.target.value
+                                    })}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm"
+                                    placeholder="Variable name..."
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                                    Expected Value
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={command.condition.value || ''}
+                                    onChange={(e) => updateCommand(sectionKey, index, 'condition', {
+                                      ...command.condition,
+                                      value: e.target.value
+                                    })}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm"
+                                    placeholder="Expected value..."
+                                  />
+                                </div>
+                              </>
+                            )}
+
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">
+                                Match Operator
+                              </label>
+                              <select
+                                value={command.condition.operator || 'contains'}
+                                onChange={(e) => updateCommand(sectionKey, index, 'condition', {
+                                  ...command.condition,
+                                  operator: e.target.value
+                                })}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm"
+                              >
+                                <option value="contains">Contains</option>
+                                <option value="matches">Regex Matches</option>
+                                <option value="equals">Equals</option>
+                                <option value="starts_with">Starts With</option>
+                                <option value="ends_with">Ends With</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          {/* Then Commands */}
+                          <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                            <h5 className="text-sm font-medium text-green-800 mb-2">Then (Execute if condition is true)</h5>
+                            <textarea
+                              value={JSON.stringify(command.condition.then || [], null, 2)}
+                              onChange={(e) => {
+                                try {
+                                  const thenCommands = JSON.parse(e.target.value);
+                                  updateCommand(sectionKey, index, 'condition', {
+                                    ...command.condition,
+                                    then: Array.isArray(thenCommands) ? thenCommands : []
+                                  });
+                                } catch (err) {
+                                  // Invalid JSON, ignore
+                                }
+                              }}
+                              className="w-full px-3 py-2 border border-green-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm font-mono"
+                              rows={3}
+                              placeholder='[{"command": "show version", "description": "Execute on success"}]'
+                            />
+                            <p className="text-xs text-green-600 mt-1">
+                              Enter JSON array of commands to execute if condition is met
+                            </p>
+                          </div>
+
+                          {/* Else Commands */}
+                          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                            <h5 className="text-sm font-medium text-red-800 mb-2">Else (Execute if condition is false)</h5>
+                            <textarea
+                              value={JSON.stringify(command.condition.else || [], null, 2)}
+                              onChange={(e) => {
+                                try {
+                                  const elseCommands = JSON.parse(e.target.value);
+                                  updateCommand(sectionKey, index, 'condition', {
+                                    ...command.condition,
+                                    else: Array.isArray(elseCommands) ? elseCommands : []
+                                  });
+                                } catch (err) {
+                                  // Invalid JSON, ignore
+                                }
+                              }}
+                              className="w-full px-3 py-2 border border-red-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm font-mono"
+                              rows={3}
+                              placeholder='[{"command": "show logging", "description": "Execute on failure"}]'
+                            />
+                            <p className="text-xs text-red-600 mt-1">
+                              Enter JSON array of commands to execute if condition is not met
+                            </p>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>

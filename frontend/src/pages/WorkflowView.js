@@ -141,6 +141,86 @@ const WorkflowView = () => {
                   </div>
                 </div>
               )}
+
+              {/* Show conditional logic */}
+              {command?.condition && (
+                <div className="mt-3 p-3 bg-purple-50 rounded border border-purple-200">
+                  <h5 className="text-xs font-medium text-purple-800 mb-2">Conditional Logic</h5>
+                  <div className="space-y-2 text-xs">
+                    <div>
+                      <span className="font-medium text-purple-700">Condition:</span>
+                      <span className="text-purple-600 ml-1 capitalize">
+                        {command.condition.type.replace('_', ' ')}
+                      </span>
+                    </div>
+
+                    {command.condition.pattern && (
+                      <div>
+                        <span className="font-medium text-purple-700">Pattern:</span>
+                        <span className="font-mono text-purple-600 ml-1">{command.condition.pattern}</span>
+                      </div>
+                    )}
+
+                    {command.condition.exit_code !== undefined && (
+                      <div>
+                        <span className="font-medium text-purple-700">Exit Code:</span>
+                        <span className="text-purple-600 ml-1">{command.condition.exit_code}</span>
+                      </div>
+                    )}
+
+                    {command.condition.text && (
+                      <div>
+                        <span className="font-medium text-purple-700">Contains:</span>
+                        <span className="text-purple-600 ml-1">"{command.condition.text}"</span>
+                      </div>
+                    )}
+
+                    {command.condition.variable_name && (
+                      <div>
+                        <span className="font-medium text-purple-700">Variable:</span>
+                        <span className="text-purple-600 ml-1">{command.condition.variable_name} = "{command.condition.value}"</span>
+                      </div>
+                    )}
+
+                    {command.condition.operator && command.condition.operator !== 'contains' && (
+                      <div>
+                        <span className="font-medium text-purple-700">Operator:</span>
+                        <span className="text-purple-600 ml-1 capitalize">{command.condition.operator.replace('_', ' ')}</span>
+                      </div>
+                    )}
+
+                    {/* Then commands */}
+                    {command.condition.then && command.condition.then.length > 0 && (
+                      <div className="mt-2">
+                        <span className="font-medium text-green-700">Then:</span>
+                        <div className="mt-1 space-y-1">
+                          {command.condition.then.map((thenCmd, idx) => (
+                            <div key={idx} className="text-green-600 bg-green-100 px-2 py-1 rounded text-xs">
+                              {thenCmd.command}
+                              {thenCmd.description && <span className="text-green-500 ml-1">({thenCmd.description})</span>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Else commands */}
+                    {command.condition.else && command.condition.else.length > 0 && (
+                      <div className="mt-2">
+                        <span className="font-medium text-red-700">Else:</span>
+                        <div className="mt-1 space-y-1">
+                          {command.condition.else.map((elseCmd, idx) => (
+                            <div key={idx} className="text-red-600 bg-red-100 px-2 py-1 rounded text-xs">
+                              {elseCmd.command}
+                              {elseCmd.description && <span className="text-red-500 ml-1">({elseCmd.description})</span>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
