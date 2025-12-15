@@ -22,7 +22,11 @@ import DeviceMapping from './pages/DeviceMapping';
 import WebhookConfigurations from './pages/WebhookConfigurations';
 import AnsibleWorkflows from './pages/AnsibleWorkflows';
 import AnsiblePlaybookCreate from './pages/AnsiblePlaybookCreate';
+import AnsiblePlaybookView from './pages/AnsiblePlaybookView';
+import AnsiblePlaybookEdit from './pages/AnsiblePlaybookEdit';
 import AnsibleInventoryCreate from './pages/AnsibleInventoryCreate';
+import AnsibleInventoryView from './pages/AnsibleInventoryView';
+import AnsibleInventoryEdit from './pages/AnsibleInventoryEdit';
 
 // Context
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -97,7 +101,11 @@ function AppRoutes() {
         <Route path="/workflows/execute" element={<ExecuteWorkflow />} />
         <Route path="/ansible-workflows" element={<AnsibleWorkflows />} />
         <Route path="/ansible-playbook-create" element={<AnsiblePlaybookCreate />} />
+        <Route path="/ansible-playbook-view/:id" element={<AnsiblePlaybookView />} />
+        <Route path="/ansible-playbook-edit/:id" element={<AnsiblePlaybookEdit />} />
         <Route path="/ansible-inventory-create" element={<AnsibleInventoryCreate />} />
+        <Route path="/ansible-inventory-view/:id" element={<AnsibleInventoryView />} />
+        <Route path="/ansible-inventory-edit/:id" element={<AnsibleInventoryEdit />} />
         <Route path="/executions" element={<Executions />} />
         <Route path="/executions/:id" element={<ExecutionDetail />} />
         <Route path="/logs" element={<Logs />} />

@@ -150,7 +150,7 @@ class AnsiblePlaybookCreateSerializer(serializers.ModelSerializer):
             'id', 'name', 'description', 'playbook_content',
             'tags_list', 'variables_dict', 'created_by', 'created_by_username'
         ]
-        read_only_fields = ['id', 'created_by', 'created_by_username']
+        read_only_fields = ['id', 'created_by_username']
 
 
 class AnsibleInventoryCreateSerializer(serializers.ModelSerializer):

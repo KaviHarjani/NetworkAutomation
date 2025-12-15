@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PlusIcon, PlayIcon, DocumentTextIcon, DocumentDuplicateIcon, PencilIcon, TrashIcon, EyeIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, PlayIcon, DocumentTextIcon, DocumentDuplicateIcon, PencilIcon, TrashIcon, EyeIcon, CodeBracketIcon, BookOpenIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { ansibleAPI } from '../services/api';
 
@@ -109,7 +109,8 @@ const AnsibleWorkflows = () => {
               {[
                 { key: 'playbooks', name: 'Playbooks', icon: DocumentTextIcon },
                 { key: 'inventories', name: 'Inventories', icon: DocumentDuplicateIcon },
-                { key: 'executions', name: 'Executions', icon: PlayIcon }
+                { key: 'executions', name: 'Executions', icon: PlayIcon },
+                { key: 'api-docs', name: 'API Documentation', icon: CodeBracketIcon }
               ].map((tab) => (
                 <button
                   key={tab.key}
@@ -150,16 +151,20 @@ const AnsibleWorkflows = () => {
                       <h3 className="text-lg font-semibold text-gray-900">{playbook.name}</h3>
                       <p className="text-sm text-gray-600 mt-1">{playbook.description}</p>
                     </div>
-                    <div className="ml-4 flex items-center space-x-2">
+                    <div className="ml-4 flex items-center space-x-2 relative z-20">
                       <button
-                        onClick={() => navigate(`/ansible-playbook-edit/${playbook.id}`)}
-                        className="text-gray-400 hover:text-gray-600"
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); navigate(`/ansible-playbook-edit/${playbook.id}`); }}
+                        className="text-gray-400 hover:text-gray-600 cursor-pointer p-1 hover:bg-gray-100 rounded"
+                        title="Edit Playbook"
                       >
                         <PencilIcon className="w-5 h-5" />
                       </button>
                       <button
-                        onClick={() => handleDeletePlaybook(playbook.id)}
-                        className="text-gray-400 hover:text-red-600"
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); handleDeletePlaybook(playbook.id); }}
+                        className="text-gray-400 hover:text-red-600 cursor-pointer p-1 hover:bg-red-50 rounded"
+                        title="Delete Playbook"
                       >
                         <TrashIcon className="w-5 h-5" />
                       </button>
@@ -189,13 +194,22 @@ const AnsibleWorkflows = () => {
                     </span>
                   </div>
 
-                  <div className="mt-4 flex space-x-3">
+                  <div className="mt-4 flex space-x-3 relative z-20">
                     <button
-                      onClick={() => navigate(`/ansible-playbook-view/${playbook.id}`)}
-                      className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); navigate(`/ansible-playbook-view/${playbook.id}`); }}
+                      className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 cursor-pointer hover:border-gray-400 transition-colors duration-200"
                     >
                       <EyeIcon className="w-4 h-4 mr-2" />
                       View
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); navigate(`/ansible-playbook-edit/${playbook.id}`); }}
+                      className="inline-flex items-center px-3 py-2 border border-blue-300 text-sm leading-4 font-medium rounded-md text-blue-700 bg-blue-50 hover:bg-blue-100 cursor-pointer hover:border-blue-400 transition-colors duration-200"
+                    >
+                      <PencilIcon className="w-4 h-4 mr-2" />
+                      Edit
                     </button>
                   </div>
                 </div>
@@ -241,16 +255,20 @@ const AnsibleWorkflows = () => {
                       <h3 className="text-lg font-semibold text-gray-900">{inventory.name}</h3>
                       <p className="text-sm text-gray-600 mt-1">{inventory.description}</p>
                     </div>
-                    <div className="ml-4 flex items-center space-x-2">
+                    <div className="ml-4 flex items-center space-x-2 relative z-20">
                       <button
-                        onClick={() => navigate(`/ansible-inventory-edit/${inventory.id}`)}
-                        className="text-gray-400 hover:text-gray-600"
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); navigate(`/ansible-inventory-edit/${inventory.id}`); }}
+                        className="text-gray-400 hover:text-gray-600 cursor-pointer p-1 hover:bg-gray-100 rounded"
+                        title="Edit Inventory"
                       >
                         <PencilIcon className="w-5 h-5" />
                       </button>
                       <button
-                        onClick={() => handleDeleteInventory(inventory.id)}
-                        className="text-gray-400 hover:text-red-600"
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); handleDeleteInventory(inventory.id); }}
+                        className="text-gray-400 hover:text-red-600 cursor-pointer p-1 hover:bg-red-50 rounded"
+                        title="Delete Inventory"
                       >
                         <TrashIcon className="w-5 h-5" />
                       </button>
@@ -279,13 +297,22 @@ const AnsibleWorkflows = () => {
                     </span>
                   </div>
 
-                  <div className="mt-4 flex space-x-3">
+                  <div className="mt-4 flex space-x-3 relative z-20">
                     <button
-                      onClick={() => navigate(`/ansible-inventory-view/${inventory.id}`)}
-                      className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); navigate(`/ansible-inventory-view/${inventory.id}`); }}
+                      className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 cursor-pointer hover:border-gray-400 transition-colors duration-200"
                     >
                       <EyeIcon className="w-4 h-4 mr-2" />
                       View
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); navigate(`/ansible-inventory-edit/${inventory.id}`); }}
+                      className="inline-flex items-center px-3 py-2 border border-green-300 text-sm leading-4 font-medium rounded-md text-green-700 bg-green-50 hover:bg-green-100 cursor-pointer hover:border-green-400 transition-colors duration-200"
+                    >
+                      <PencilIcon className="w-4 h-4 mr-2" />
+                      Edit
                     </button>
                   </div>
                 </div>
@@ -404,6 +431,259 @@ const AnsibleWorkflows = () => {
                   <p className="text-gray-600 mb-6">Execute an Ansible playbook to see execution results.</p>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* API Documentation Tab */}
+        {activeTab === 'api-docs' && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h2 className="text-2xl font-semibold text-gray-900">API Documentation</h2>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
+                <span className="text-blue-800 text-sm font-medium">New Feature</span>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg shadow p-6">
+              <div className="flex items-center gap-3 mb-6">
+                <CodeBracketIcon className="w-6 h-6 text-blue-600" />
+                <h3 className="text-xl font-semibold text-gray-900">Device-Specific Execution API</h3>
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                  Enhanced - ID or Name
+                </span>
+              </div>
+              
+              <div className="space-y-6">
+                {/* Endpoint Information */}
+                <div>
+                  <h4 className="text-lg font-medium text-gray-900 mb-3">Endpoint</h4>
+                  <div className="bg-gray-50 rounded-lg p-4 font-mono text-sm">
+                    <span className="text-green-600">POST</span> /api/automation/ansible/execute-on-device/
+                  </div>
+                </div>
+
+                {/* Description */}
+                <div>
+                  <h4 className="text-lg font-medium text-gray-900 mb-3">Description</h4>
+                  <p className="text-gray-600">
+                    Execute stored Ansible playbooks programmatically on specific network devices. This endpoint accepts device ID and either playbook ID or playbook name to retrieve YAML content from the database, along with JSON variables for automated configuration and management tasks.
+                  </p>
+                </div>
+
+                {/* Request Format */}
+                <div>
+                  <h4 className="text-lg font-medium text-gray-900 mb-3">Request Format</h4>
+                  <div className="bg-gray-900 rounded-lg p-4 text-green-400 font-mono text-sm overflow-x-auto">
+                    <pre>{`{
+  "device_id": "uuid-string",           // Required: Device UUID from database
+  "playbook_id": "uuid-string",         // Optional: Ansible playbook UUID from database
+  "playbook_name": "string",            // Optional: Ansible playbook name from database
+  "variables": {},                      // Optional: JSON object with variables
+  "tags": [],                          // Optional: List of tags to run
+  "skip_tags": []                      // Optional: List of tags to skip
+}`}</pre>
+                  </div>
+                  <div className="mt-2 text-sm text-gray-600">
+                    <strong>Note:</strong> Provide either <code className="bg-gray-200 px-1 rounded">playbook_id</code> OR <code className="bg-gray-200 px-1 rounded">playbook_name</code>, not both.
+                  </div>
+                </div>
+
+                {/* Example Usage */}
+                <div>
+                  <h4 className="text-lg font-medium text-gray-900 mb-3">Example Usage</h4>
+
+                  <div className="space-y-4">
+                    <div>
+                      <h5 className="font-medium text-gray-800 mb-2">Using Playbook ID (Recommended)</h5>
+                      <div className="bg-gray-900 rounded-lg p-4 text-green-400 font-mono text-sm overflow-x-auto">
+                        <pre>{`curl -X POST http://localhost:8000/api/automation/ansible/execute-on-device/ \\
+     -H "Content-Type: application/json" \\
+     -d '{
+       "device_id": "123e4567-e89b-12d3-a456-426614174000",
+       "playbook_id": "456e7890-e89b-12d3-a456-426614174001",
+       "variables": {"custom_var": "value"}
+     }'`}</pre>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h5 className="font-medium text-gray-800 mb-2">Using Playbook Name</h5>
+                      <div className="bg-gray-900 rounded-lg p-4 text-green-400 font-mono text-sm overflow-x-auto">
+                        <pre>{`curl -X POST http://localhost:8000/api/automation/ansible/execute-on-device/ \\
+     -H "Content-Type: application/json" \\
+     -d '{
+       "device_id": "123e4567-e89b-12d3-a456-426614174000",
+       "playbook_name": "network-config-playbook",
+       "variables": {"custom_var": "value"}
+     }'`}</pre>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h5 className="font-medium text-gray-800 mb-2">With Custom Variables</h5>
+                      <div className="bg-gray-900 rounded-lg p-4 text-green-400 font-mono text-sm overflow-x-auto">
+                        <pre>{`curl -X POST http://localhost:8000/api/automation/ansible/execute-on-device/ \\
+     -H "Content-Type: application/json" \\
+     -d '{
+       "device_id": "123e4567-e89b-12d3-a456-426614174000",
+       "playbook_name": "interface-configuration",
+       "variables": {
+         "interface_name": "GigabitEthernet0/1",
+         "vlan_id": "100",
+         "custom_setting": "production"
+       }
+     }'`}</pre>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h5 className="font-medium text-gray-800 mb-2">With Tags</h5>
+                      <div className="bg-gray-900 rounded-lg p-4 text-green-400 font-mono text-sm overflow-x-auto">
+                        <pre>{`curl -X POST http://localhost:8000/api/automation/ansible/execute-on-device/ \\
+     -H "Content-Type: application/json" \\
+     -d '{
+       "device_id": "123e4567-e89b-12d3-a456-426614174000",
+       "playbook_id": "456e7890-e89b-12d3-a456-426614174001",
+       "variables": {"test_mode": true},
+       "tags": ["configuration", "testing"]
+     }'`}</pre>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Response Format */}
+                <div>
+                  <h4 className="text-lg font-medium text-gray-900 mb-3">Success Response</h4>
+                  <div className="bg-gray-900 rounded-lg p-4 text-green-400 font-mono text-sm overflow-x-auto">
+                    <pre>{`{
+  "success": true,
+  "execution_time": 12.5,
+  "return_code": 0,
+  "device_info": {
+    "name": "Router-01",
+    "hostname": "router01.example.com",
+    "ip_address": "192.168.1.1",
+    "device_type": "router",
+    "vendor": "Cisco"
+  },
+  "playbook_info": {
+    "valid": true,
+    "plays": 1
+  },
+  "variables_used": {
+    "device_name": "Router-01",
+    "device_hostname": "router01.example.com",
+    "device_ip": "192.168.1.1",
+    "device_type": "router",
+    "device_vendor": "Cisco",
+    "custom_var_1": "Test Value 1"
+  },
+  "result": "ansible-playbook output...",
+  "stdout": "execution output...",
+  "stderr": ""
+}`}</pre>
+                  </div>
+                </div>
+
+                {/* Available Variables */}
+                <div>
+                  <h4 className="text-lg font-medium text-gray-900 mb-3">Automatic Variables</h4>
+                  <p className="text-gray-600 mb-3">
+                    The following variables are automatically available in all playbooks:
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <h5 className="font-medium text-gray-800 mb-2">Device Information</h5>
+                      <ul className="text-sm text-gray-600 space-y-1">
+                        <li><code className="bg-gray-200 px-1 rounded">device_name</code> - Name of the target device</li>
+                        <li><code className="bg-gray-200 px-1 rounded">device_hostname</code> - Hostname of the device</li>
+                        <li><code className="bg-gray-200 px-1 rounded">device_ip</code> - IP address of the device</li>
+                        <li><code className="bg-gray-200 px-1 rounded">device_type</code> - Type of device (router, switch, etc.)</li>
+                        <li><code className="bg-gray-200 px-1 rounded">device_vendor</code> - Device vendor information</li>
+                      </ul>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <h5 className="font-medium text-gray-800 mb-2">Custom Variables</h5>
+                      <p className="text-sm text-gray-600">
+                        Plus any custom variables provided in the request payload.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Features */}
+                <div>
+                  <h4 className="text-lg font-medium text-gray-900 mb-3">Key Features</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        <span className="text-sm text-gray-700">Device-specific targeting</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        <span className="text-sm text-gray-700">Dynamic variable support</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        <span className="text-sm text-gray-700">Playbook stored in database</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        <span className="text-sm text-gray-700">Support for ID or name lookup</span>
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        <span className="text-sm text-gray-700">CORS support</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        <span className="text-sm text-gray-700">Comprehensive error handling</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        <span className="text-sm text-gray-700">Automatic inventory generation</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Error Handling */}
+                <div>
+                  <h4 className="text-lg font-medium text-gray-900 mb-3">Error Handling</h4>
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                    <h5 className="font-medium text-red-800 mb-2">Common Error Responses</h5>
+                    <ul className="text-sm text-red-700 space-y-1">
+                      <li><strong>400 Bad Request:</strong> Missing device_id or both playbook_id and playbook_name</li>
+                      <li><strong>400 Bad Request:</strong> Both playbook_id and playbook_name provided</li>
+                      <li><strong>404 Not Found:</strong> Device, playbook ID, or playbook name doesn't exist</li>
+                      <li><strong>500 Internal Server Error:</strong> Execution timeout or system error</li>
+                    </ul>
+                  </div>
+                </div>
+
+                {/* Test Script */}
+                <div>
+                  <h4 className="text-lg font-medium text-gray-900 mb-3">Test Script</h4>
+                  <p className="text-gray-600 mb-3">
+                    A comprehensive test script is available at <code className="bg-gray-200 px-2 py-1 rounded">test_ansible_device_api.py</code>
+                    with examples and documentation.
+                  </p>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <div className="flex items-center gap-2">
+                      <BookOpenIcon className="w-5 h-5 text-blue-600" />
+                      <span className="text-blue-800 font-medium">Full Documentation</span>
+                    </div>
+                    <p className="text-blue-700 text-sm mt-2">
+                      See <code className="bg-blue-100 px-1 rounded">ANSIBLE_DEVICE_API_DOCUMENTATION.md</code> for complete API documentation.
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}
