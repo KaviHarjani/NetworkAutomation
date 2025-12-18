@@ -176,6 +176,9 @@ export const deviceAPI = {
   assignWorkflowToGroup: (workflowId, deviceIds) =>
     api.post('/api/devices/assign-workflow/', { workflow_id: workflowId, device_ids: deviceIds }),
 
+  assignPlaybookToGroup: (playbookId, deviceIds) =>
+    api.post('/api/devices/assign-playbook/', { playbook_id: playbookId, device_ids: deviceIds }),
+
   executeWorkflow: (executionData) =>
     api.post('/api/executions/execute/', executionData),
 };

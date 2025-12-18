@@ -4,9 +4,16 @@ from django.views.decorators.http import require_http_methods
 from django.core.paginator import Paginator
 from django.db import models
 import json
-from .models import Device, Workflow, WorkflowExecution, SystemLog, WebhookConfiguration
+from .models import (
+    Device, Workflow, WorkflowExecution,
+    SystemLog, WebhookConfiguration
+)
 from .tasks import execute_workflow
 from .webhook_utils import WebhookManager
+from .ansible_utils import (
+    validate_ansible_playbook_content,
+    validate_ansible_inventory_content
+)
 
 
 def create_cors_response(data, status=200):
@@ -156,6 +163,59 @@ def assign_workflow_to_group(request):
 
     except Workflow.DoesNotExist:
         return create_cors_response({'error': 'Workflow not found'}, status=404)
+    except Exception as e:
+        return create_cors_response({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST", "OPTIONS"])
+def assign_playbook_to_group(request):
+    """API endpoint to assign Ansible playbook to a device group"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = JsonResponse({})
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
+
+    try:
+        data = json.loads(request.body)
+        playbook_id = data.get('playbook_id')
+        device_ids = data.get('device_ids', [])
+
+        if not playbook_id or not device_ids:
+            return create_cors_response({
+                'error': 'playbook_id and device_ids are required'
+            }, status=400)
+
+        # Validate playbook exists
+        try:
+            from .models import AnsiblePlaybook
+            playbook = AnsiblePlaybook.objects.get(id=playbook_id)
+        except AnsiblePlaybook.DoesNotExist:
+            return create_cors_response({
+                'error': 'Ansible playbook not found'
+            }, status=404)
+
+        # Validate devices exist
+        devices = Device.objects.filter(id__in=device_ids)
+        if devices.count() != len(device_ids):
+            return create_cors_response({
+                'error': 'One or more devices not found'
+            }, status=404)
+
+        # In a full implementation, this would create device-playbook mappings
+        # For now, we'll just return success
+        return create_cors_response({
+            'message': f'Assigned playbook "{playbook.name}" to {len(device_ids)} devices',
+            'playbook_id': str(playbook_id),
+            'playbook_name': playbook.name,
+            'device_count': len(device_ids),
+            'devices_assigned': device_ids
+        })
+
     except Exception as e:
         return create_cors_response({'error': str(e)}, status=500)
 

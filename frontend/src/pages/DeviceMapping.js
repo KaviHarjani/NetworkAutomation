@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { PlusIcon, MagnifyingGlassIcon, FunnelIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
-import { deviceAPI } from '../services/api';
+import { deviceAPI, ansibleAPI } from '../services/api';
 
 const DeviceMapping = () => {
   const [groupings, setGroupings] = useState([]);
@@ -9,12 +9,16 @@ const DeviceMapping = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [workflows, setWorkflows] = useState([]);
+  const [playbooks, setPlaybooks] = useState([]);
   const [selectedWorkflow, setSelectedWorkflow] = useState('');
+  const [selectedPlaybook, setSelectedPlaybook] = useState('');
+  const [assignmentType, setAssignmentType] = useState('workflow'); // 'workflow' or 'playbook'
   const [expandedGroups, setExpandedGroups] = useState({});
 
   useEffect(() => {
     fetchDeviceGroupings();
     fetchWorkflows();
+    fetchPlaybooks();
   }, []);
 
   const fetchDeviceGroupings = async () => {
@@ -38,6 +42,15 @@ const DeviceMapping = () => {
     }
   };
 
+  const fetchPlaybooks = async () => {
+    try {
+      const response = await ansibleAPI.getPlaybooks();
+      setPlaybooks(response.data.playbooks);
+    } catch (error) {
+      toast.error('Failed to fetch playbooks: ' + (error.response?.data?.error || error.message));
+    }
+  };
+
   const toggleGroupExpansion = (index) => {
     setExpandedGroups(prev => ({
       ...prev,
@@ -57,6 +70,21 @@ const DeviceMapping = () => {
       setSelectedGroup(null);
     } catch (error) {
       toast.error('Failed to assign workflow: ' + (error.response?.data?.error || error.message));
+    }
+  };
+
+  const handleAssignPlaybook = async (group) => {
+    if (!selectedPlaybook) {
+      toast.error('Please select a playbook first');
+      return;
+    }
+
+    try {
+      const response = await deviceAPI.assignPlaybookToGroup(selectedPlaybook, group.device_ids);
+      toast.success(response.data.message);
+      setSelectedGroup(null);
+    } catch (error) {
+      toast.error('Failed to assign playbook: ' + (error.response?.data?.error || error.message));
     }
   };
 
@@ -98,8 +126,28 @@ const DeviceMapping = () => {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Select Workflow
+                Assignment Type
               </label>
+              <select
+                value={assignmentType}
+                onChange={(e) => {
+                  setAssignmentType(e.target.value);
+                  setSelectedWorkflow('');
+                  setSelectedPlaybook('');
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="workflow">Workflow</option>
+                <option value="playbook">Ansible Playbook</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              {assignmentType === 'workflow' ? 'Select Workflow' : 'Select Ansible Playbook'}
+            </label>
+            {assignmentType === 'workflow' ? (
               <select
                 value={selectedWorkflow}
                 onChange={(e) => setSelectedWorkflow(e.target.value)}
@@ -112,7 +160,20 @@ const DeviceMapping = () => {
                   </option>
                 ))}
               </select>
-            </div>
+            ) : (
+              <select
+                value={selectedPlaybook}
+                onChange={(e) => setSelectedPlaybook(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">Select a playbook...</option>
+                {playbooks.map(playbook => (
+                  <option key={playbook.id} value={playbook.id}>
+                    {playbook.name}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
         </div>
 
@@ -146,6 +207,10 @@ const DeviceMapping = () => {
                   <div>
                     <div className="text-2xl font-bold text-blue-900">{workflows.length}</div>
                     <div className="text-sm text-blue-700">Available Workflows</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold text-blue-900">{playbooks.length}</div>
+                    <div className="text-sm text-blue-700">Available Playbooks</div>
                   </div>
                 </div>
               </div>
@@ -181,7 +246,7 @@ const DeviceMapping = () => {
                             onClick={() => setSelectedGroup(group)}
                             className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
                           >
-                            Assign Workflow
+                            Assign
                           </button>
                         </div>
                       </div>
@@ -213,9 +278,11 @@ const DeviceMapping = () => {
         {selectedGroup && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Assign Workflow</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                Assign {assignmentType === 'workflow' ? 'Workflow' : 'Playbook'}
+              </h3>
               <p className="text-gray-600 mb-4">
-                Assign workflow to <span className="font-medium">{selectedGroup.device_count}</span> devices:
+                Assign {assignmentType === 'workflow' ? 'workflow' : 'playbook'} to <span className="font-medium">{selectedGroup.device_count}</span> devices:
               </p>
               <div className="bg-gray-50 border border-gray-200 rounded-md p-3 mb-4">
                 <div className="text-sm font-medium">{selectedGroup.model}</div>
@@ -227,20 +294,35 @@ const DeviceMapping = () => {
 
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Selected Workflow
+                  Selected {assignmentType === 'workflow' ? 'Workflow' : 'Playbook'}
                 </label>
-                <select
-                  value={selectedWorkflow}
-                  onChange={(e) => setSelectedWorkflow(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="">Select a workflow...</option>
-                  {workflows.map(workflow => (
-                    <option key={workflow.id} value={workflow.id}>
-                      {workflow.name}
-                    </option>
-                  ))}
-                </select>
+                {assignmentType === 'workflow' ? (
+                  <select
+                    value={selectedWorkflow}
+                    onChange={(e) => setSelectedWorkflow(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">Select a workflow...</option>
+                    {workflows.map(workflow => (
+                      <option key={workflow.id} value={workflow.id}>
+                        {workflow.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <select
+                    value={selectedPlaybook}
+                    onChange={(e) => setSelectedPlaybook(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">Select a playbook...</option>
+                    {playbooks.map(playbook => (
+                      <option key={playbook.id} value={playbook.id}>
+                        {playbook.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div className="flex justify-end gap-3">
@@ -251,11 +333,17 @@ const DeviceMapping = () => {
                   Cancel
                 </button>
                 <button
-                  onClick={() => handleAssignWorkflow(selectedGroup)}
-                  disabled={!selectedWorkflow}
+                  onClick={() => {
+                    if (assignmentType === 'workflow') {
+                      handleAssignWorkflow(selectedGroup);
+                    } else {
+                      handleAssignPlaybook(selectedGroup);
+                    }
+                  }}
+                  disabled={assignmentType === 'workflow' ? !selectedWorkflow : !selectedPlaybook}
                   className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
                 >
-                  Assign Workflow
+                  Assign {assignmentType === 'workflow' ? 'Workflow' : 'Playbook'}
                 </button>
               </div>
             </div>

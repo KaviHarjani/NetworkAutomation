@@ -6,6 +6,7 @@ from . import api_auth_views, api_views, csrf_exempt_views
 from .api_views import (
     device_grouping,
     assign_workflow_to_group,
+    assign_playbook_to_group,
     execute_workflow_api
 )
 from .api_viewsets import (
@@ -71,6 +72,9 @@ urlpatterns = [
     path('devices/assign-workflow/',
          assign_workflow_to_group,
          name='assign_workflow_to_group'),
+    path('devices/assign-playbook/',
+         assign_playbook_to_group,
+         name='assign_playbook_to_group'),
     path('executions/execute/', execute_workflow_api, name='execute_workflow'),
     
     # Webhook endpoints
