@@ -1,7 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
-from automation.ansible_api_views import AnsibleExecutionViewSet, AnsibleInventoryViewSet, AnsiblePlaybookViewSet
 from . import api_auth_views, api_views, csrf_exempt_views
 from .api_views import (
     device_grouping,
@@ -19,6 +18,8 @@ from .bpmn_viewsets import (
 from .ansible_api_views import (
     AnsiblePlaybookViewSet, AnsibleInventoryViewSet, AnsibleExecutionViewSet
 )
+from .unified_log_views import UnifiedLogViewSet
+from .unified_log_views import UnifiedLogViewSet
 
 app_name = 'automation_api'
 
@@ -35,6 +36,7 @@ router.register(r'execution-paths', WorkflowExecutionPathViewSet, basename='exec
 router.register(r'ansible-playbooks', AnsiblePlaybookViewSet, basename='ansible-playbook')
 router.register(r'ansible-inventories', AnsibleInventoryViewSet, basename='ansible-inventory')
 router.register(r'ansible-executions', AnsibleExecutionViewSet, basename='ansible-execution')
+router.register(r'unified-logs', UnifiedLogViewSet, basename='unified-log')
 
 urlpatterns = [
     # Custom workflow create endpoint to match frontend expectations

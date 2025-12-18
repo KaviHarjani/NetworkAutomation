@@ -243,6 +243,26 @@ export const logsAPI = {
     api.get(`/api/logs/${logId}/`),
 };
 
+// Unified Logs API
+export const unifiedLogsAPI = {
+  getUnifiedLogs: (params = {}) =>
+    api.get('/api/unified-logs/', { params }),
+  
+  getLogTypes: () =>
+    api.get('/api/unified-logs/log-types/'),
+  
+  getDevices: () =>
+    api.get('/api/unified-logs/devices/'),
+  
+  getExecutionLogs: (executionId, executionType) =>
+    api.get('/api/unified-logs/execution_logs/', { 
+      params: { execution_id: executionId, execution_type: executionType } 
+    }),
+  
+  getExecutions: (params = {}) =>
+    api.get('/api/unified-logs/executions/', { params }),
+};
+
 
 // Webhook API
 export const webhookAPI = {
