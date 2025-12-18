@@ -13,6 +13,8 @@ import Executions from './pages/Executions';
 import ExecutionDetail from './pages/ExecutionDetail';
 import CreateDevice from './pages/CreateDevice';
 import CreateWorkflow from './pages/CreateWorkflow';
+import DeviceView from './pages/DeviceView';
+import DeviceEdit from './pages/DeviceEdit';
 import EnhancedCreateWorkflow from './pages/EnhancedCreateWorkflow';
 import ExecuteWorkflow from './pages/ExecuteWorkflow';
 import WorkflowView from './pages/WorkflowView';
@@ -93,6 +95,8 @@ function AppRoutes() {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/devices" element={<Devices />} />
         <Route path="/devices/create" element={<CreateDevice />} />
+        <Route path="/devices/:id" element={<DeviceView />} />
+        <Route path="/devices/:id/edit" element={<DeviceEdit />} />
         <Route path="/workflows" element={<Workflows />} />
         <Route path="/workflows/create" element={<CreateWorkflow />} />
         <Route path="/workflows/create/enhanced" element={<EnhancedCreateWorkflow />} />
