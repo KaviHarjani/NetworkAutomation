@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from 'react-query';
 import {
@@ -48,6 +48,9 @@ const Devices = () => {
     toast.error('Failed to load devices');
   }
 
+  // Debounce search to avoid too many API calls
+  const [searchTimeout, setSearchTimeout] = useState(null);
+
   const handleSearch = (e) => {
     e.preventDefault();
     setCurrentPage(1);
@@ -57,6 +60,30 @@ const Devices = () => {
   const handlePageChange = (page) => {
     setCurrentPage(page);
   };
+
+  // Reset page to 1 when search term or status filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter]);
+
+  // Debounced search when search term or status filter changes
+  useEffect(() => {
+    if (searchTimeout) {
+      clearTimeout(searchTimeout);
+    }
+
+    const timeout = setTimeout(() => {
+      refetch();
+    }, 500); // 500ms debounce delay
+
+    setSearchTimeout(timeout);
+
+    return () => {
+      if (searchTimeout) {
+        clearTimeout(searchTimeout);
+      }
+    };
+  }, [searchTerm, statusFilter, refetch]);
 
   if (isLoading) {
     return (
@@ -102,7 +129,9 @@ const Devices = () => {
           <div className="md:w-48">
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
             >
               <option value="all">All Status</option>
