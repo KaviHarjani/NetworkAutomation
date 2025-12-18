@@ -7,6 +7,7 @@ import subprocess
 import json
 import yaml
 from datetime import datetime
+from decouple import config
 from .models import AnsibleExecution
 
 
@@ -53,6 +54,21 @@ class AnsibleRunner:
                     '--timeout', '30',
                 ]
                 
+                # Set up environment variables for Ansible network credentials
+                env_vars = os.environ.copy()
+                
+                # Pass Ansible network credentials using python-decouple (same as Django settings)
+                ansible_user = config('ANSIBLE_NET_USERNAME', default=None)
+                ansible_password = config('ANSIBLE_NET_PASSWORD', default=None)
+                ansible_auth_pass = config('ANSIBLE_NET_AUTH_PASS', default=None)
+                
+                if ansible_user and isinstance(ansible_user, str):
+                    env_vars['ANSIBLE_NET_USERNAME'] = ansible_user
+                if ansible_password and isinstance(ansible_password, str):
+                    env_vars['ANSIBLE_NET_PASSWORD'] = ansible_password
+                if ansible_auth_pass and isinstance(ansible_auth_pass, str):
+                    env_vars['ANSIBLE_NET_AUTH_PASS'] = ansible_auth_pass
+                
                 # Add tags if specified
                 if tags:
                     cmd.extend(['--tags', ','.join(tags)])
@@ -66,12 +82,13 @@ class AnsibleRunner:
                     for key, value in extra_vars.items():
                         cmd.extend(['-e', f'{key}={value}'])
                 
-                # Execute command
+                # Execute command with environment variables
                 result = subprocess.run(
                     cmd,
                     capture_output=True,
                     text=True,
-                    timeout=300  # 5 minute timeout
+                    timeout=300,  # 5 minute timeout
+                    env=env_vars  # Pass environment variables to Ansible
                 )
                 
                 end_time = datetime.now()
@@ -456,8 +473,24 @@ def execute_ansible_playbook_on_device(
             'device_vendor': device.vendor or "unknown"
         }
         
-        # Merge with provided variables
-        final_variables = {**default_variables, **(variables or {})}
+        # Add Ansible network credentials from environment variables if available
+        # These will be overridden if provided in the variables parameter
+        env_credentials = {}
+        
+        # Get credentials using python-decouple (same as Django settings)
+        ansible_user = config('ANSIBLE_NET_USERNAME', default=None)
+        ansible_password = config('ANSIBLE_NET_PASSWORD', default=None)
+        ansible_auth_pass = config('ANSIBLE_NET_AUTH_PASS', default=None)
+        
+        if ansible_user and isinstance(ansible_user, str):
+            env_credentials['ansible_user'] = ansible_user
+        if ansible_password and isinstance(ansible_password, str):
+            env_credentials['ansible_password'] = ansible_password
+        if ansible_auth_pass and isinstance(ansible_auth_pass, str):
+            env_credentials['ansible_become_password'] = ansible_auth_pass
+        
+        # Merge with provided variables (provided variables override environment)
+        final_variables = {**default_variables, **env_credentials, **(variables or {})}
         
         # Validate playbook content
         validation_result = validate_ansible_playbook_content(playbook_content)
