@@ -11,6 +11,8 @@ const AnsibleWorkflows = () => {
   const [executions, setExecutions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('playbooks');
+  const [selectedPlaybookId, setSelectedPlaybookId] = useState(null);
+  const [selectedInventoryId, setSelectedInventoryId] = useState(null);
 
   // Load data
   useEffect(() => {
@@ -68,6 +70,24 @@ const AnsibleWorkflows = () => {
       setExecutions(executionsRes.data.executions || []);
     } catch (error) {
       toast.error('Failed to execute playbook');
+    }
+  };
+
+  const handleExecuteAnsibleWorkflow = async (playbookId, inventoryId) => {
+    try {
+      // Use the correct API endpoint for executing Ansible playbooks
+      const response = await ansibleAPI.executePlaybook({
+        playbook_id: playbookId,
+        inventory_id: inventoryId
+      });
+      toast.success('Ansible workflow execution started');
+      // Refresh executions
+      const executionsRes = await ansibleAPI.getExecutions();
+      setExecutions(executionsRes.data.executions || []);
+      // Navigate to execution detail page
+      navigate(`/ansible-execution-detail/${response.data.execution_id}`);
+    } catch (error) {
+      toast.error('Failed to execute Ansible workflow: ' + (error.response?.data?.error || error.message));
     }
   };
 
@@ -143,6 +163,53 @@ const AnsibleWorkflows = () => {
               </button>
             </div>
 
+            {/* Execute Playbook Section */}
+            <div className="bg-white rounded-xl shadow-lg p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Execute Playbook</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Select Playbook</label>
+                  <select
+                    value={selectedPlaybookId || ''}
+                    onChange={(e) => setSelectedPlaybookId(e.target.value || null)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">Choose a playbook...</option>
+                    {playbooks.map((playbook) => (
+                      <option key={playbook.id} value={playbook.id}>{playbook.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Select Inventory</label>
+                  <select
+                    value={selectedInventoryId || ''}
+                    onChange={(e) => setSelectedInventoryId(e.target.value || null)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">Choose an inventory...</option>
+                    {inventories.map((inventory) => (
+                      <option key={inventory.id} value={inventory.id}>{inventory.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="mt-4 flex space-x-3">
+                <button
+                  onClick={() => handleExecuteAnsibleWorkflow(selectedPlaybookId, selectedInventoryId)}
+                  disabled={!selectedPlaybookId || !selectedInventoryId}
+                  className={`inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white ${
+                    selectedPlaybookId && selectedInventoryId
+                      ? 'bg-green-600 hover:bg-green-700'
+                      : 'bg-gray-300 cursor-not-allowed'
+                  }`}
+                >
+                  <PlayIcon className="w-4 h-4 mr-2" />
+                  Execute Workflow
+                </button>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {playbooks.map((playbook) => (
                 <div key={playbook.id} className="bg-white rounded-lg shadow p-6">
@@ -210,6 +277,14 @@ const AnsibleWorkflows = () => {
                     >
                       <PencilIcon className="w-4 h-4 mr-2" />
                       Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); handleExecuteAnsibleWorkflow(playbook.id, null); }}
+                      className="inline-flex items-center px-3 py-2 border border-green-300 text-sm leading-4 font-medium rounded-md text-green-700 bg-green-50 hover:bg-green-100 cursor-pointer hover:border-green-400 transition-colors duration-200"
+                    >
+                      <PlayIcon className="w-4 h-4 mr-2" />
+                      Execute
                     </button>
                   </div>
                 </div>

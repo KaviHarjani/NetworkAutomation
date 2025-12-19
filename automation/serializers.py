@@ -319,6 +319,7 @@ class WorkflowExecutionCreateSerializer(serializers.Serializer):
     """Serializer for workflow execution request"""
     workflow_id = serializers.UUIDField()
     device_id = serializers.UUIDField()
+    dynamic_params = serializers.DictField(required=False, default=dict)
 
 
 class WorkflowExecutionResponseSerializer(serializers.Serializer):

@@ -206,8 +206,8 @@ export const workflowAPI = {
   getWorkflowExampleApiBody: (workflowId) =>
     api.get(`/api/workflows/${workflowId}/example_api_body/`),
   
-  executeWorkflow: (workflowId, deviceId) =>
-    api.post('/api/workflows/execute/', { workflow_id: workflowId, device_id: deviceId }),
+  executeWorkflow: (executionData) =>
+    api.post('/api/executions/execute/', executionData),
 };
 
 // Execution API

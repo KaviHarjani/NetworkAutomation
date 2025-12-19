@@ -22,6 +22,4 @@ celery -A network_automation worker \
     --concurrency=1 \
     --without-gossip \
     --without-mingle \
-    --without-heartbeat \
-    --broker=sqla+sqlite:///celery_broker.sqlite3 \
-    --result-backend=db+sqlite:///celery_results.sqlite3
+    --without-heartbeat

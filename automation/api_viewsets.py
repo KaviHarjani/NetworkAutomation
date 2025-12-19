@@ -508,6 +508,11 @@ class ExecutionViewSet(viewsets.ViewSet):
                 created_by=user
             )
             
+            # Set dynamic parameters if provided
+            if 'dynamic_params' in data:
+                execution.set_dynamic_params(data['dynamic_params'])
+                execution.save()
+            
             # Start async task
             task = execute_workflow.delay(str(execution.id))
             
