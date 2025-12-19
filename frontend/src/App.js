@@ -112,6 +112,7 @@ function AppRoutes() {
         <Route path="/ansible-inventory-edit/:id" element={<AnsibleInventoryEdit />} />
         <Route path="/executions" element={<Executions />} />
         <Route path="/executions/:id" element={<ExecutionDetail />} />
+        <Route path="/ansible-execution-detail/:id" element={<ExecutionDetail />} />
         <Route path="/logs" element={<Logs />} />
         <Route path="/device-mapping" element={<DeviceMapping />} />
         <Route path="/webhooks" element={<WebhookConfigurations />} />

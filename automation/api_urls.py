@@ -8,7 +8,8 @@ from .api_views import (
     assign_playbook_to_group,
     generate_group_inventory_api,
     execute_workflow_api,
-    unified_execution_list
+    unified_execution_list,
+    unified_execution_detail
 )
 from .api_viewsets import (
     DeviceViewSet, WorkflowViewSet, ExecutionViewSet, LogViewSet
@@ -87,6 +88,7 @@ urlpatterns = [
          name='generate_group_inventory'),
     path('executions/execute/', execute_workflow_api, name='execute_workflow'),
     path('executions/unified/', unified_execution_list, name='unified_execution_list'),
+    path('executions/unified/<uuid:execution_id>/', unified_execution_detail, name='unified_execution_detail'),
     
     # Webhook endpoints
     path('webhooks/',

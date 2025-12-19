@@ -218,6 +218,9 @@ export const executionAPI = {
   getUnifiedExecutions: (params = {}) =>
     api.get('/api/executions/unified/', { params }),
   
+  getUnifiedExecutionDetail: (executionId) =>
+    api.get(`/api/executions/unified/${executionId}/`),
+  
   getExecution: (executionId) =>
     api.get(`/api/executions/${executionId}/`),
   

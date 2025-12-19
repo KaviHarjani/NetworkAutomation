@@ -912,6 +912,105 @@ def execution_status(request, execution_id):
 
 @csrf_exempt
 @require_http_methods(["GET", "OPTIONS"])
+def unified_execution_detail(request, execution_id):
+    """API endpoint to get details for a specific execution (workflow or Ansible)"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = JsonResponse({})
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
+    
+    try:
+        from .models import WorkflowExecution, AnsibleExecution
+        
+        # Try to find as workflow execution first
+        try:
+            execution = WorkflowExecution.objects.get(id=execution_id)
+            execution_data = {
+                'id': str(execution.id),
+                'type': 'workflow',
+                'status': execution.status,
+                'started_at': execution.started_at.isoformat() if execution.started_at else None,
+                'completed_at': execution.completed_at.isoformat() if execution.completed_at else None,
+                'created_at': execution.created_at.isoformat(),
+                'created_by': execution.created_by.username if execution.created_by else 'System',
+                'workflow': {
+                    'id': str(execution.workflow.id),
+                    'name': execution.workflow.name
+                },
+                'device': {
+                    'id': str(execution.device.id),
+                    'name': execution.device.name
+                },
+                'current_stage': execution.current_stage,
+                'error_message': execution.error_message,
+                'stdout': execution.stdout,
+                'stderr': execution.stderr,
+            }
+            
+            # Add command executions
+            command_executions = execution.command_executions.all()
+            execution_data['command_executions'] = []
+            
+            for cmd_exec in command_executions:
+                cmd_data = {
+                    'id': str(cmd_exec.id),
+                    'command': cmd_exec.command,
+                    'stage': cmd_exec.stage,
+                    'status': cmd_exec.status,
+                    'output': cmd_exec.output,
+                    'error_output': cmd_exec.error_output,
+                    'validation_result': cmd_exec.validation_result,
+                    'started_at': cmd_exec.started_at.isoformat() if cmd_exec.started_at else None,
+                    'completed_at': cmd_exec.completed_at.isoformat() if cmd_exec.completed_at else None,
+                }
+                execution_data['command_executions'].append(cmd_data)
+            
+            return create_cors_response(execution_data)
+            
+        except WorkflowExecution.DoesNotExist:
+            pass
+        
+        # Try to find as Ansible execution
+        try:
+            execution = AnsibleExecution.objects.get(id=execution_id)
+            execution_data = {
+                'id': str(execution.id),
+                'type': 'ansible',
+                'status': execution.status,
+                'started_at': execution.started_at.isoformat() if execution.started_at else None,
+                'completed_at': execution.completed_at.isoformat() if execution.completed_at else None,
+                'created_at': execution.created_at.isoformat(),
+                'created_by': execution.created_by.username if execution.created_by else 'System',
+                'playbook_name': execution.playbook.name,
+                'playbook_id': str(execution.playbook.id),
+                'inventory_name': execution.inventory.name,
+                'inventory_id': str(execution.inventory.id),
+                'execution_time': execution.execution_time,
+                'return_code': execution.return_code,
+                'stdout': execution.stdout,
+                'stderr': execution.stderr,
+                'extra_vars': execution.extra_vars,
+                'tags': execution.tags,
+            }
+            
+            return create_cors_response(execution_data)
+            
+        except AnsibleExecution.DoesNotExist:
+            pass
+        
+        # If neither found, return 404
+        return create_cors_response({'error': 'Execution not found'}, status=404)
+        
+    except Exception as e:
+        return create_cors_response({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET", "OPTIONS"])
 def unified_execution_list(request):
     """API endpoint to list both workflow and Ansible executions"""
     # Handle CORS preflight request

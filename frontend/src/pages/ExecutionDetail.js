@@ -2,35 +2,27 @@ import React from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from 'react-query';
 import { ArrowLeftIcon, PlayIcon, ClockIcon, CheckCircleIcon, XCircleIcon } from '@heroicons/react/24/outline';
-import { executionAPI, unifiedLogsAPI } from '../services/api';
+import { executionAPI } from '../services/api';
 import StatusBadge from '../components/StatusBadge';
 
 const ExecutionDetail = () => {
   const { id } = useParams();
-
-  // Try to fetch as workflow execution first
-  const { data: workflowData, isLoading: workflowLoading, error: workflowError } = useQuery(
-    ['workflow-execution', id],
-    () => executionAPI.getExecution(id),
+  
+  // Fetch execution data using unified API
+  const { data: rawData, isLoading, error } = useQuery(
+    ['unified-execution-detail', id],
+    () => executionAPI.getUnifiedExecutionDetail(id),
     {
       retry: false,
       enabled: !!id,
     }
   );
-
-  // Try to fetch as Ansible execution if workflow fails
-  const { data: ansibleData, isLoading: ansibleLoading, error: ansibleError } = useQuery(
-    ['ansible-execution', id],
-    () => unifiedLogsAPI.getExecutionLogs(id, 'ansible'),
-    {
-      retry: false,
-      enabled: !!id && !!workflowError,
-    }
-  );
-
-  const isLoading = workflowLoading || ansibleLoading;
-  const error = workflowError && ansibleError;
-  const executionData = workflowData?.data || ansibleData;
+  
+  // Handle API response structure (unified API returns data directly)
+  const executionData = rawData?.data || rawData;
+  
+  // Determine execution type from the data
+  const isAnsibleExecution = executionData?.type === 'ansible';
 
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleString();
@@ -56,6 +48,10 @@ const ExecutionDetail = () => {
     );
   }
 
+  if (error) {
+    console.error('Execution detail error:', error);
+  }
+  
   if (error || !executionData) {
     return (
       <div className="space-y-6">
@@ -69,6 +65,9 @@ const ExecutionDetail = () => {
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Execution Not Found</h1>
             <p className="text-gray-600 mt-1">Execution ID: {id}</p>
+            {error && (
+              <p className="text-red-500 mt-2 text-sm">Error: {error.message}</p>
+            )}
           </div>
         </div>
 
@@ -77,13 +76,19 @@ const ExecutionDetail = () => {
             <XCircleIcon className="h-12 w-12 mx-auto mb-4 text-red-300" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">Execution Not Found</h3>
             <p className="text-gray-500">The requested execution could not be found or you don't have permission to view it.</p>
+            {process.env.NODE_ENV === 'development' && (
+              <details className="mt-4 text-left">
+                <summary className="cursor-pointer text-sm text-gray-600">Debug Info</summary>
+                <pre className="mt-2 text-xs text-gray-500 bg-gray-100 p-2 rounded overflow-auto">
+                  {JSON.stringify({ id, isAnsibleExecution, error: error?.message, executionData }, null, 2)}
+                </pre>
+              </details>
+            )}
           </div>
         </div>
       </div>
     );
   }
-
-  const isAnsibleExecution = ansibleData !== undefined;
 
   return (
     <div className="space-y-6">
