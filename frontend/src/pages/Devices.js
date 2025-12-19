@@ -30,16 +30,20 @@ const Devices = () => {
     {
       refetchOnWindowFocus: false,
       keepPreviousData: true,
+      staleTime: 0, // Always consider data stale to force refresh
+      gcTime: 0, // Don't cache results
     }
   );
 
-  const devices = data?.data.devices || [];
+  // Parse API response
+  const devices = data?.data?.devices || [];
+  
   const pagination = {
-    total: data?.data.total || 0,
-    page: data?.data.page || 1,
-    per_page: data?.data.per_page || 10,
-    has_next: data?.data.has_next || false,
-    has_previous: data?.data.has_previous || false,
+    total: data?.data?.total || 0,
+    page: data?.data?.page || 1,
+    per_page: data?.data?.per_page || 10,
+    has_next: data?.data?.has_next || false,
+    has_previous: data?.data?.has_previous || false,
   };
 
   const totalPages = Math.ceil(pagination.total / pagination.per_page);
@@ -65,6 +69,11 @@ const Devices = () => {
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, statusFilter]);
+
+  // Force refetch on component mount to get fresh data
+  useEffect(() => {
+    refetch();
+  }, [refetch]);
 
   // Debounced search when search term or status filter changes
   useEffect(() => {

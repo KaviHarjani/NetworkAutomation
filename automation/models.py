@@ -412,7 +412,7 @@ class WebhookConfiguration(models.Model):
     description = models.TextField(blank=True)
     webhook_url = models.URLField(help_text="URL to send webhook notifications")
     events = models.CharField(
-        max_length=20,
+        max_length=100,
         choices=WEBHOOK_EVENTS,
         default='execution_completed',
         help_text="Events that trigger this webhook"

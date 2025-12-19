@@ -29,7 +29,7 @@ const DeviceView = () => {
   );
 
   const device = data?.data;
-
+  console.log('DEBUG: Fetching device with ID:', data)
   const handleDelete = async () => {
     try {
       await deviceAPI.deleteDevice(id);

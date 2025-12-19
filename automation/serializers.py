@@ -5,6 +5,30 @@ from .models import (
 )
 
 
+class DeviceCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating Device model with custom created_by handling"""
+    created_by_username = serializers.CharField(
+        source='created_by.username', read_only=True
+    )
+    
+    class Meta:
+        model = Device
+        fields = [
+            'id', 'name', 'hostname', 'ip_address', 'device_type', 'status',
+            'ssh_port', 'vendor', 'model', 'os_version', 'location',
+            'description', 'created_by', 'created_by_username', 
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = [
+            'id', 'created_by_username', 
+            'created_at', 'updated_at'
+        ]
+        extra_kwargs = {
+            'password': {'write_only': True},
+            'enable_password': {'write_only': True},
+        }
+
+
 class DeviceSerializer(serializers.ModelSerializer):
     """Serializer for Device model"""
     created_by_username = serializers.CharField(

@@ -6,7 +6,7 @@ from django.core.paginator import Paginator
 from django.db.models import Q
 from .models import Device, Workflow, WorkflowExecution, SystemLog
 from .serializers import (
-    DeviceSerializer, WorkflowSerializer, WorkflowCreateSerializer,
+    DeviceSerializer, DeviceCreateSerializer, WorkflowSerializer, WorkflowCreateSerializer,
     WorkflowExecutionSerializer, WorkflowExecutionCreateSerializer,
     WorkflowExecutionResponseSerializer,
     SystemLogSerializer, PaginatedDeviceSerializer, PaginatedWorkflowSerializer,
@@ -24,25 +24,41 @@ class DeviceViewSet(viewsets.ViewSet):
     
     @extend_schema(
         summary="List Devices",
-        description="Retrieve a paginated list of all devices",
+        description="Retrieve a paginated list of all devices with search and filter options",
         responses={
             200: PaginatedDeviceSerializer,
             500: ErrorResponseSerializer
         },
         parameters=[
+            OpenApiParameter(name='search', type=str, description='Search devices by name, hostname, or IP address'),
+            OpenApiParameter(name='status', type=str, description='Filter by device status'),
             OpenApiParameter(name='page', type=int, description='Page number'),
             OpenApiParameter(name='per_page', type=int, description='Items per page')
         ]
     )
     def list(self, request):
-        """List all devices with pagination"""
+        """List all devices with pagination, search, and filters"""
         try:
             devices = Device.objects.all()
+            
+            # Search filter
+            search = request.GET.get('search')
+            if search:
+                devices = devices.filter(
+                    Q(name__icontains=search) |
+                    Q(hostname__icontains=search) |
+                    Q(ip_address__icontains=search)
+                )
+            
+            # Status filter
+            status_filter = request.GET.get('status')
+            if status_filter and status_filter != 'all':
+                devices = devices.filter(status=status_filter)
             
             # Pagination
             page = int(request.GET.get('page', 1))
             per_page = int(request.GET.get('per_page', 10))
-            paginator = Paginator(devices, per_page)
+            paginator = Paginator(devices.order_by('-created_at'), per_page)
             page_obj = paginator.get_page(page)
             
             serializer = DeviceSerializer(page_obj, many=True)
@@ -73,16 +89,20 @@ class DeviceViewSet(viewsets.ViewSet):
         try:
             # Get user (for now, using a default user or creating anonymous)
             from django.contrib.auth.models import User
-            user, created = User.objects.get_or_create(
-                username='api_user', 
+            user, _ = User.objects.get_or_create(
+                username='api_user',
                 defaults={'email': 'api@example.com'}
             )
-            
+
+            # Ensure we have a valid user ID
+            if not user.id:
+                raise ValueError("Failed to create or get user")
+
             # Add created_by to the request data
             request_data = request.data.copy()
             request_data['created_by'] = user.id
-            
-            serializer = DeviceSerializer(data=request_data)
+
+            serializer = DeviceCreateSerializer(data=request_data)
             if serializer.is_valid():
                 device = serializer.save()
                 return Response({
@@ -90,8 +110,92 @@ class DeviceViewSet(viewsets.ViewSet):
                     'message': 'Device created successfully'
                 }, status=status.HTTP_201_CREATED)
             else:
+                return Response({
+                    'error': str(serializer.errors)
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @extend_schema(
+        summary="Get Device Detail",
+        description="Retrieve detailed information about a specific device",
+        responses={
+            200: DeviceSerializer,
+            404: ErrorResponseSerializer,
+            500: ErrorResponseSerializer
+        }
+    )
+    def retrieve(self, request, pk=None):
+        """Get device details"""
+        try:
+            device = Device.objects.get(id=pk)
+            serializer = DeviceSerializer(device)
+            return Response(serializer.data)
+            
+        except Device.DoesNotExist:
+            return Response({'error': 'Device not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @extend_schema(
+        summary="Update Device",
+        description="Update an existing device",
+        request=DeviceSerializer,
+        responses={
+            200: DeviceSerializer,
+            404: ErrorResponseSerializer,
+            400: ErrorResponseSerializer
+        }
+    )
+    def update(self, request, pk=None):
+        """Update a device"""
+        try:
+            device = Device.objects.get(id=pk)
+            serializer = DeviceSerializer(device, data=request.data, partial=True)
+            
+            if serializer.is_valid():
+                serializer.save()
+                return Response({
+                    'id': str(device.id),
+                    'message': 'Device updated successfully'
+                })
+            else:
                 return Response({'error': str(serializer.errors)}, status=status.HTTP_400_BAD_REQUEST)
                 
+        except Device.DoesNotExist:
+            return Response({'error': 'Device not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @extend_schema(
+        summary="Delete Device",
+        description="Delete a device",
+        responses={
+            200: {
+                'type': 'object',
+                'properties': {
+                    'message': {'type': 'string'},
+                    'id': {'type': 'string'}
+                }
+            },
+            404: ErrorResponseSerializer,
+            400: ErrorResponseSerializer
+        }
+    )
+    def destroy(self, request, pk=None):
+        """Delete a device"""
+        try:
+            device = Device.objects.get(id=pk)
+            device.delete()
+            
+            return Response({
+                'id': str(pk),
+                'message': 'Device deleted successfully'
+            })
+            
+        except Device.DoesNotExist:
+            return Response({'error': 'Device not found'}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
