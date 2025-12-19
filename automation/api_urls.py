@@ -61,6 +61,9 @@ urlpatterns = [
     # Device-specific execution endpoint (execute on specific device)
     path('ansible/execute-on-device/', csrf_exempt_views.ansible_playbook_execute_on_device,
          name='ansible_playbook_execute_on_device'),
+    # Background device-specific execution endpoint (execute on device via Celery)
+    path('ansible/execute-on-device-background/', csrf_exempt_views.ansible_playbook_execute_on_device_background,
+         name='ansible_playbook_execute_on_device_background'),
     
     # Authentication endpoints (keeping these as function-based views)
     path('auth/csrf-token/', api_auth_views.api_csrf_token,

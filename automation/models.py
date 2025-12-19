@@ -396,6 +396,9 @@ class WebhookConfiguration(models.Model):
         ('execution_completed', 'Execution Completed'),
         ('execution_failed', 'Execution Failed'),
         ('execution_started', 'Execution Started'),
+        ('ansible_execution_completed', 'Ansible Execution Completed'),
+        ('ansible_execution_failed', 'Ansible Execution Failed'),
+        ('ansible_execution_started', 'Ansible Execution Started'),
         ('all_events', 'All Events'),
     ]
 
@@ -444,7 +447,10 @@ class WebhookConfiguration(models.Model):
     def get_events_list(self):
         """Get list of events this webhook should trigger on"""
         if self.events == 'all_events':
-            return ['execution_completed', 'execution_failed', 'execution_started']
+            return [
+                'execution_completed', 'execution_failed', 'execution_started',
+                'ansible_execution_completed', 'ansible_execution_failed', 'ansible_execution_started'
+            ]
         return [self.events]
 
 

@@ -6,6 +6,7 @@ import tempfile
 import subprocess
 import json
 import yaml
+import time
 from datetime import datetime
 from decouple import config
 from .models import AnsibleExecution
@@ -299,6 +300,134 @@ class AnsibleRunner:
                 'valid': False,
                 'error': f'Inventory validation error: {str(e)}'
             }
+
+
+
+def execute_ansible_playbook_on_device_task(
+    device_id, playbook_content, variables=None, tags=None, skip_tags=None
+):
+    """
+    Celery task to execute Ansible playbook on a device in background
+    
+    Args:
+        device_id: Device ID
+        playbook_content: YAML content of the Ansible playbook
+        variables: Dictionary of extra variables (optional)
+        tags: List of tags to run (optional)
+        skip_tags: List of tags to skip (optional)
+        
+    Returns:
+        dict: Execution results
+    """
+    from .models import Device, AnsibleExecution, AnsiblePlaybook, AnsibleInventory
+    from .webhook_utils import WebhookManager
+    from django.contrib.auth.models import User
+    
+    try:
+        # Get device from database
+        device = Device.objects.get(id=device_id)
+        
+        # Create temporary playbook and inventory for execution tracking
+        # For direct device execution, we'll create minimal records
+        temp_playbook = type('TempPlaybook', (), {
+            'name': f'Device_{device.name}_Playbook',
+            'playbook_content': playbook_content
+        })()
+        
+        temp_inventory = type('TempInventory', (), {
+            'name': f'Device_{device.name}_Inventory',
+            'inventory_content': generate_device_inventory(device)
+        })()
+        
+        # Create AnsibleExecution record
+        execution_record = AnsibleExecution.objects.create(
+            playbook=type('PlaybookRef', (), {'id': None})(),  # Temporary reference
+            inventory=type('InventoryRef', (), {'id': None})(),  # Temporary reference
+            status='running',
+            started_at=datetime.now()
+        )
+        
+        # Send webhook for execution started
+        WebhookManager.send_ansible_webhook_notification(
+            execution_record, 'ansible_execution_started'
+        )
+        
+        # Execute playbook using the existing function
+        result = execute_ansible_playbook_on_device(
+            device=device,
+            playbook_content=playbook_content,
+            variables=variables,
+            tags=tags,
+            skip_tags=skip_tags
+        )
+        
+        # Update execution record with results
+        execution_record.status = 'completed' if result.get('success') else 'failed'
+        execution_record.completed_at = datetime.now()
+        execution_record.execution_time = result.get('execution_time', 0)
+        execution_record.stdout = result.get('result', '') if result.get('success') else ''
+        execution_record.stderr = result.get('error', '') if not result.get('success') else ''
+        execution_record.return_code = result.get('return_code', 1)
+        
+        # Set extra vars and tags
+        if variables:
+            execution_record.set_extra_vars(variables)
+        if tags:
+            execution_record.set_tags_list(tags)
+        if skip_tags:
+            execution_record.set_skip_tags_list(skip_tags)
+        
+        execution_record.save()
+        
+        # Send webhook for completion
+        event_type = 'ansible_execution_completed' if result.get('success') else 'ansible_execution_failed'
+        WebhookManager.send_ansible_webhook_notification(
+            execution_record, event_type
+        )
+        
+        return {
+            'success': True,
+            'execution_id': str(execution_record.id),
+            'task_id': f"device_{device_id}_{int(time.time())}",
+            'result': result
+        }
+        
+    except Device.DoesNotExist:
+        # Send failure webhook if we have an execution record
+        try:
+            if 'execution_record' in locals():
+                execution_record.status = 'failed'
+                execution_record.completed_at = datetime.now()
+                execution_record.stderr = f'Device with ID {device_id} not found'
+                execution_record.save()
+                WebhookManager.send_ansible_webhook_notification(
+                    execution_record, 'ansible_execution_failed'
+                )
+        except:
+            pass
+        
+        return {
+            'success': False,
+            'error': f'Device with ID {device_id} not found'
+        }
+    except Exception as e:
+        # Send failure webhook if we have an execution record
+        try:
+            if 'execution_record' in locals():
+                execution_record.status = 'failed'
+                execution_record.completed_at = datetime.now()
+                execution_record.stderr = f'Background execution failed: {str(e)}'
+                execution_record.save()
+                WebhookManager.send_ansible_webhook_notification(
+                    execution_record, 'ansible_execution_failed'
+                )
+        except:
+            pass
+        
+        return {
+            'success': False,
+            'error': f'Background execution failed: {str(e)}'
+        }
 
 
 def execute_ansible_playbook_task(execution_id):

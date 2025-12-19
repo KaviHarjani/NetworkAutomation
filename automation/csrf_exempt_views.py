@@ -294,6 +294,118 @@ def ansible_playbook_execute_variables(request):
 
 @csrf_exempt
 @require_http_methods(["POST", "OPTIONS"])
+def ansible_playbook_execute_on_device_background(request):
+    """Execute Ansible playbook on a device via API in background using Celery"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = JsonResponse({})
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
+    
+    try:
+        # Parse request data
+        if request.content_type == 'application/json':
+            data = json.loads(request.body)
+        else:
+            data = request.POST.dict()
+        
+        # Extract required fields
+        device_id = data.get('device_id')
+        playbook_content = data.get('playbook_content')
+        variables = data.get('variables', {})
+        tags = data.get('tags', [])
+        skip_tags = data.get('skip_tags', [])
+        
+        # Validate required fields
+        if not device_id:
+            return create_cors_response({
+                'error': 'device_id is required'
+            }, status=400)
+        
+        if not playbook_content:
+            return create_cors_response({
+                'error': 'playbook_content is required'
+            }, status=400)
+        
+        # Validate variables (must be a dictionary)
+        if not isinstance(variables, dict):
+            return create_cors_response({
+                'error': 'variables must be a JSON object'
+            }, status=400)
+        
+        # Validate tags and skip_tags (must be lists)
+        if not isinstance(tags, list):
+            return create_cors_response({
+                'error': 'tags must be a list'
+            }, status=400)
+        
+        if not isinstance(skip_tags, list):
+            return create_cors_response({
+                'error': 'skip_tags must be a list'
+            }, status=400)
+        
+        # Validate playbook content
+        validation_result = validate_ansible_playbook_content(playbook_content)
+        if not validation_result.get('valid', False):
+            return create_cors_response({
+                'error': 'Invalid playbook content',
+                'validation_error': validation_result.get('error', 'Unknown validation error')
+            }, status=400)
+        
+        # Get device from database
+        from .models import Device
+        try:
+            device = Device.objects.get(id=device_id)
+        except Device.DoesNotExist:
+            return create_cors_response({
+                'error': f'Device with ID {device_id} not found'
+            }, status=404)
+        
+        # Submit task to Celery for background execution
+        from automation.tasks import execute_ansible_playbook_on_device_task
+        
+        # Apply the task asynchronously
+        task_result = execute_ansible_playbook_on_device_task.delay(
+            device_id,
+            playbook_content,
+            variables=variables,
+            tags=tags if tags else None,
+            skip_tags=skip_tags if skip_tags else None
+        )
+        
+        # Return immediately with task ID for status checking
+        response_data = {
+            'success': True,
+            'task_id': task_result.id,
+            'status': 'submitted',
+            'message': 'Ansible playbook execution started in background',
+            'device_info': {
+                'id': device.id,
+                'name': device.name,
+                'hostname': device.hostname or device.name,
+                'ip_address': device.ip_address,
+                'device_type': device.device_type
+            },
+            'playbook_info': {
+                'valid': True,
+                'plays': validation_result.get('plays', 1)
+            }
+        }
+        
+        # Return result with CORS headers
+        return create_cors_response(response_data, status=202)  # 202 Accepted
+        
+    except json.JSONDecodeError:
+        return create_cors_response({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        return create_cors_response({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST", "OPTIONS"])
 def ansible_playbook_execute_on_device(request):
     """Execute Ansible playbook on a specific device via API"""
     # Handle CORS preflight request
