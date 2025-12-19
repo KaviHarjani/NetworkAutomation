@@ -70,9 +70,9 @@ const Dashboard = () => {
       setStats({
         totalDevices,
         totalWorkflows,
-        totalExecutions: totalExecutions + totalAnsibleExecutions,
+        totalExecutions: totalExecutions + totalAnsibleExecutions, // Combined total
         totalAnsibleExecutions,
-        runningExecutions: runningExecutions + runningAnsibleExecutions,
+        runningExecutions: Math.max(runningExecutions, runningAnsibleExecutions), // Use max to avoid double counting
         runningAnsibleExecutions,
       });
     }
@@ -112,7 +112,12 @@ const Dashboard = () => {
     ...(ansibleExecutionsData?.data.executions || [])
   ];
   
-  const executionStats = allExecutions.reduce(
+  // Remove duplicates based on id to prevent double counting
+  const uniqueExecutions = allExecutions.filter((execution, index, self) => 
+    index === self.findIndex(e => e.id === execution.id)
+  );
+  
+  const executionStats = uniqueExecutions.reduce(
     (acc, exec) => {
       acc[exec.status] = (acc[exec.status] || 0) + 1;
       acc.total++;
@@ -300,14 +305,14 @@ const Dashboard = () => {
                   <tr key={execution.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm font-medium text-gray-900">
-                        {execution.workflow?.name || execution.playbook_name}
+                        {execution.workflow?.name || execution.playbook?.name || execution.playbook_name || 'Unknown'}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
                         <DeviceTabletIcon className="h-4 w-4 text-gray-400 mr-2" />
                         <div className="text-sm text-gray-900">
-                          {execution.device?.name || execution.inventory_name || 'N/A'}
+                          {execution.device?.name || execution.inventory?.name || execution.inventory_name || 'N/A'}
                         </div>
                       </div>
                     </td>
@@ -322,7 +327,7 @@ const Dashboard = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <Link
-                        to={`/${execution.type === 'ansible' ? 'ansible-execution-detail' : 'executions'}/${execution.id}`}
+                        to={`/executions/${execution.id}`}
                         className="text-red-600 hover:text-red-900"
                       >
                         View

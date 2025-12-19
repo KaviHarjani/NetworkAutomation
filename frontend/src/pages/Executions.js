@@ -225,6 +225,11 @@ const Executions = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">
+                          {execution.device?.name || execution.inventory?.name || execution.inventory_name || 'N/A'}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
                         <StatusBadge status={execution.status} type="execution" />
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -252,7 +257,7 @@ const Executions = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <Link
-                          to={`/${execution.type === 'ansible' ? 'ansible-execution-detail' : 'executions'}/${execution.id}`}
+                          to={`/executions/${execution.id}`}
                           className="text-red-600 hover:text-red-900"
                         >
                           View Details

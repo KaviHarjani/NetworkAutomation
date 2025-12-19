@@ -21,8 +21,12 @@ const ExecutionDetail = () => {
   // Handle API response structure (unified API returns data directly)
   const executionData = rawData?.data || rawData;
   
+  // Debug logging
+  console.log('ExecutionDetail - Raw data:', rawData);
+  console.log('ExecutionDetail - Processed data:', executionData);
+  
   // Determine execution type from the data
-  const isAnsibleExecution = executionData?.type === 'ansible';
+  const isAnsibleExecution = executionData?.type === 'ansible' || executionData?.playbook_name;
 
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleString();
@@ -53,6 +57,13 @@ const ExecutionDetail = () => {
   }
   
   if (error || !executionData) {
+    console.error('ExecutionDetail - Full error details:', {
+      error,
+      executionData,
+      id,
+      rawData
+    });
+    
     return (
       <div className="space-y-6">
         <div className="flex items-center">
@@ -66,7 +77,12 @@ const ExecutionDetail = () => {
             <h1 className="text-3xl font-bold text-gray-900">Execution Not Found</h1>
             <p className="text-gray-600 mt-1">Execution ID: {id}</p>
             {error && (
-              <p className="text-red-500 mt-2 text-sm">Error: {error.message}</p>
+              <div className="mt-2">
+                <p className="text-red-500 text-sm">Error: {error.message}</p>
+                {error.response?.data?.error && (
+                  <p className="text-red-500 text-sm">API Error: {error.response.data.error}</p>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -75,12 +91,31 @@ const ExecutionDetail = () => {
           <div className="text-center py-12">
             <XCircleIcon className="h-12 w-12 mx-auto mb-4 text-red-300" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">Execution Not Found</h3>
-            <p className="text-gray-500">The requested execution could not be found or you don't have permission to view it.</p>
+            <p className="text-gray-500 mb-4">
+              The requested execution could not be found or you don't have permission to view it.
+            </p>
+            <div className="space-y-2">
+              <Link
+                to="/executions"
+                className="bg-red-600 text-white hover:bg-red-700 px-4 py-2 rounded-lg inline-flex items-center"
+              >
+                <ArrowLeftIcon className="h-4 w-4 mr-2" />
+                Back to Executions
+              </Link>
+            </div>
             {process.env.NODE_ENV === 'development' && (
               <details className="mt-4 text-left">
                 <summary className="cursor-pointer text-sm text-gray-600">Debug Info</summary>
-                <pre className="mt-2 text-xs text-gray-500 bg-gray-100 p-2 rounded overflow-auto">
-                  {JSON.stringify({ id, isAnsibleExecution, error: error?.message, executionData }, null, 2)}
+                <pre className="mt-2 text-xs text-gray-500 bg-gray-100 p-2 rounded overflow-auto max-h-40">
+                  {JSON.stringify({ 
+                    id, 
+                    error: error?.message, 
+                    executionData, 
+                    rawData,
+                    isAnsibleExecution,
+                    hasData: !!executionData,
+                    dataKeys: executionData ? Object.keys(executionData) : []
+                  }, null, 2)}
                 </pre>
               </details>
             )}
