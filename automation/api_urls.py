@@ -6,7 +6,9 @@ from .api_views import (
     device_grouping,
     assign_workflow_to_group,
     assign_playbook_to_group,
-    execute_workflow_api
+    generate_group_inventory_api,
+    execute_workflow_api,
+    unified_execution_list
 )
 from .api_viewsets import (
     DeviceViewSet, WorkflowViewSet, ExecutionViewSet, LogViewSet
@@ -80,7 +82,11 @@ urlpatterns = [
     path('devices/assign-playbook/',
          assign_playbook_to_group,
          name='assign_playbook_to_group'),
+    path('devices/generate-inventory/',
+         generate_group_inventory_api,
+         name='generate_group_inventory'),
     path('executions/execute/', execute_workflow_api, name='execute_workflow'),
+    path('executions/unified/', unified_execution_list, name='unified_execution_list'),
     
     # Webhook endpoints
     path('webhooks/',

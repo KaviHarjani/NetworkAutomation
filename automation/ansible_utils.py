@@ -4,12 +4,15 @@ Ansible utilities for executing playbooks and managing inventory
 import os
 import tempfile
 import subprocess
-import json
 import yaml
 import time
+import logging
 from datetime import datetime
 from decouple import config
 from .models import AnsibleExecution
+
+# Set up logger
+logger = logging.getLogger(__name__)
 
 
 class AnsibleRunner:
@@ -322,35 +325,57 @@ def execute_ansible_playbook_on_device_task(
     from .models import Device, AnsibleExecution, AnsiblePlaybook, AnsibleInventory
     from .webhook_utils import WebhookManager
     from django.contrib.auth.models import User
+    import uuid
+    
+    # Set up logger for this function
+    task_logger = logging.getLogger('automation.ansible_utils')
     
     try:
         # Get device from database
         device = Device.objects.get(id=device_id)
         
-        # Create temporary playbook and inventory for execution tracking
-        # For direct device execution, we'll create minimal records
-        temp_playbook = type('TempPlaybook', (), {
-            'name': f'Device_{device.name}_Playbook',
-            'playbook_content': playbook_content
-        })()
+        # Create temporary playbook and inventory objects for execution tracking
+        # These are temporary objects since we're executing directly on a device
+        temp_playbook = AnsiblePlaybook.objects.create(
+            name=f"Device_{device.name}_Temp_Playbook_{uuid.uuid4().hex[:8]}",
+            description=f"Temporary playbook for device {device.name}",
+            playbook_content=playbook_content,
+            created_by=User.objects.get_or_create(username='system')[0]
+        )
         
-        temp_inventory = type('TempInventory', (), {
-            'name': f'Device_{device.name}_Inventory',
-            'inventory_content': generate_device_inventory(device)
-        })()
+        temp_inventory = AnsibleInventory.objects.create(
+            name=f"Device_{device.name}_Temp_Inventory_{uuid.uuid4().hex[:8]}",
+            description=f"Temporary inventory for device {device.name}",
+            inventory_content=generate_device_inventory(device),
+            created_by=User.objects.get_or_create(username='system')[0]
+        )
         
         # Create AnsibleExecution record
         execution_record = AnsibleExecution.objects.create(
-            playbook=type('PlaybookRef', (), {'id': None})(),  # Temporary reference
-            inventory=type('InventoryRef', (), {'id': None})(),  # Temporary reference
+            playbook=temp_playbook,
+            inventory=temp_inventory,
             status='running',
-            started_at=datetime.now()
+            started_at=datetime.now(),
+            created_by=User.objects.get_or_create(username='system')[0]
         )
         
+        # Set extra vars and tags
+        if variables:
+            execution_record.set_extra_vars(variables)
+        if tags:
+            execution_record.set_tags_list(tags)
+        if skip_tags:
+            execution_record.set_skip_tags_list(skip_tags)
+        
+        execution_record.save()
+        
         # Send webhook for execution started
-        WebhookManager.send_ansible_webhook_notification(
-            execution_record, 'ansible_execution_started'
-        )
+        try:
+            WebhookManager.send_ansible_webhook_notification(
+                execution_record, 'ansible_execution_started'
+            )
+        except Exception as e:
+            task_logger.warning(f"Failed to send ansible_execution_started webhook: {e}")
         
         # Execute playbook using the existing function
         result = execute_ansible_playbook_on_device(
@@ -369,21 +394,23 @@ def execute_ansible_playbook_on_device_task(
         execution_record.stderr = result.get('error', '') if not result.get('success') else ''
         execution_record.return_code = result.get('return_code', 1)
         
-        # Set extra vars and tags
-        if variables:
-            execution_record.set_extra_vars(variables)
-        if tags:
-            execution_record.set_tags_list(tags)
-        if skip_tags:
-            execution_record.set_skip_tags_list(skip_tags)
-        
         execution_record.save()
         
         # Send webhook for completion
-        event_type = 'ansible_execution_completed' if result.get('success') else 'ansible_execution_failed'
-        WebhookManager.send_ansible_webhook_notification(
-            execution_record, event_type
+        event_type = (
+            'ansible_execution_completed' if result.get('success') 
+            else 'ansible_execution_failed'
         )
+        try:
+            WebhookManager.send_ansible_webhook_notification(
+                execution_record, event_type
+            )
+        except Exception as e:
+            task_logger.warning(f"Failed to send {event_type} webhook: {e}")
+        
+        # Clean up temporary objects (optional - you might want to keep them for auditing)
+        # temp_playbook.delete()
+        # temp_inventory.delete()
         
         return {
             'success': True,
@@ -393,37 +420,13 @@ def execute_ansible_playbook_on_device_task(
         }
         
     except Device.DoesNotExist:
-        # Send failure webhook if we have an execution record
-        try:
-            if 'execution_record' in locals():
-                execution_record.status = 'failed'
-                execution_record.completed_at = datetime.now()
-                execution_record.stderr = f'Device with ID {device_id} not found'
-                execution_record.save()
-                WebhookManager.send_ansible_webhook_notification(
-                    execution_record, 'ansible_execution_failed'
-                )
-        except:
-            pass
-        
+        task_logger.error(f"Device with ID {device_id} not found")
         return {
             'success': False,
             'error': f'Device with ID {device_id} not found'
         }
     except Exception as e:
-        # Send failure webhook if we have an execution record
-        try:
-            if 'execution_record' in locals():
-                execution_record.status = 'failed'
-                execution_record.completed_at = datetime.now()
-                execution_record.stderr = f'Background execution failed: {str(e)}'
-                execution_record.save()
-                WebhookManager.send_ansible_webhook_notification(
-                    execution_record, 'ansible_execution_failed'
-                )
-        except:
-            pass
-        
+        task_logger.error(f"Background execution failed: {e}")
         return {
             'success': False,
             'error': f'Background execution failed: {str(e)}'
@@ -570,6 +573,88 @@ def generate_device_inventory(device, group_name="network_devices"):
     except Exception as e:
         raise Exception(
             f"Failed to generate inventory for device {device.name}: {str(e)}"
+        )
+
+
+def generate_group_inventory(device_ids, group_name=None):
+    """
+    Generate Ansible inventory content from multiple device IDs
+    
+    Args:
+        device_ids: List of device UUIDs
+        group_name: Name of the host group (auto-generated if None)
+        
+    Returns:
+        str: Ansible inventory content in INI format
+    """
+    from .models import Device
+    
+    try:
+        devices = Device.objects.filter(id__in=device_ids)
+        
+        if not devices.exists():
+            raise Exception("No devices found with the provided IDs")
+        
+        # Auto-generate group name if not provided
+        if not group_name:
+            # Get common characteristics for group name
+            models = devices.values_list('model', flat=True).distinct()
+            vendors = devices.values_list('vendor', flat=True).distinct()
+            os_versions = devices.values_list('os_version', flat=True).distinct()
+            
+            # Create group name from common characteristics
+            model = models[0] if len(models) == 1 else "mixed"
+            vendor = vendors[0] if len(vendors) == 1 else "mixed"
+            os_version = os_versions[0] if len(os_versions) == 1 else "mixed"
+            
+            # Clean up group name (remove spaces, special chars)
+            group_name = f"{vendor}_{model}_{os_version}".replace(" ", "_").replace("/", "_").lower()
+            group_name = "".join(c for c in group_name if c.isalnum() or c == "_")
+        
+        # Build inventory content
+        inventory_lines = []
+        inventory_lines.append(f"[{group_name}]")
+        
+        # Add all devices to the group
+        for device in devices:
+            hostname = device.hostname or device.name
+            inventory_lines.append(
+                f"{hostname} ansible_host={device.ip_address} ansible_port={device.ssh_port}"
+            )
+        
+        inventory_lines.append("")
+        inventory_lines.append(f"[{group_name}:vars]")
+        
+        # Add group-level variables (common for all devices)
+        group_vars = {
+            'ansible_connection': 'network_cli',
+            'ansible_network_os': 'ios',  # Default, can be customized
+            'device_count': devices.count(),
+            'group_name': group_name
+        }
+        
+        for key, value in group_vars.items():
+            inventory_lines.append(f"{key}={value}")
+        
+        # Add device-specific variables section
+        inventory_lines.append("")
+        inventory_lines.append("# Device-specific variables")
+        
+        for device in devices:
+            hostname = device.hostname or device.name
+            inventory_lines.append(f"[{hostname}]")
+            inventory_lines.append(f"device_type={device.device_type}")
+            inventory_lines.append(f"device_vendor={device.vendor or 'unknown'}")
+            inventory_lines.append(f"device_model={device.model or 'unknown'}")
+            inventory_lines.append(f"device_name={device.name}")
+            inventory_lines.append(f"location={device.location or 'unknown'}")
+            inventory_lines.append("")
+        
+        return "\n".join(inventory_lines)
+        
+    except Exception as e:
+        raise Exception(
+            f"Failed to generate group inventory: {str(e)}"
         )
 
 

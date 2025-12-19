@@ -14,7 +14,7 @@ import {
 
 import StatCard from '../components/StatCard';
 import StatusBadge from '../components/StatusBadge';
-import { deviceAPI, workflowAPI, executionAPI, dashboardAPI } from '../services/api';
+import { deviceAPI, workflowAPI, executionAPI, ansibleAPI, dashboardAPI } from '../services/api';
 import toast from 'react-hot-toast';
 
 const Dashboard = () => {
@@ -22,7 +22,9 @@ const Dashboard = () => {
     totalDevices: 0,
     totalWorkflows: 0,
     totalExecutions: 0,
+    totalAnsibleExecutions: 0,
     runningExecutions: 0,
+    runningAnsibleExecutions: 0,
   });
 
   // Fetch dashboard data
@@ -44,27 +46,58 @@ const Dashboard = () => {
     { refetchOnWindowFocus: false }
   );
 
+  // Fetch Ansible executions
+  const { data: ansibleExecutionsData, isLoading: ansibleExecutionsLoading } = useQuery(
+    'ansible-executions',
+    () => ansibleAPI.getExecutions({ per_page: 100 }),
+    { refetchOnWindowFocus: false }
+  );
+
   // Calculate stats from API data
   useEffect(() => {
-    if (devicesData && workflowsData && executionsData) {
+    if (devicesData && workflowsData && executionsData && ansibleExecutionsData) {
       const totalDevices = devicesData.data.total || 0;
       const totalWorkflows = workflowsData.data.workflows?.length || 0;
       const totalExecutions = executionsData.data.total || 0;
+      const totalAnsibleExecutions = ansibleExecutionsData.data.total || 0;
       const runningExecutions = executionsData.data.executions?.filter(
+        exec => exec.status === 'running'
+      ).length || 0;
+      const runningAnsibleExecutions = ansibleExecutionsData.data.executions?.filter(
         exec => exec.status === 'running'
       ).length || 0;
 
       setStats({
         totalDevices,
         totalWorkflows,
-        totalExecutions,
-        runningExecutions,
+        totalExecutions: totalExecutions + totalAnsibleExecutions,
+        totalAnsibleExecutions,
+        runningExecutions: runningExecutions + runningAnsibleExecutions,
+        runningAnsibleExecutions,
       });
     }
-  }, [devicesData, workflowsData, executionsData]);
+  }, [devicesData, workflowsData, executionsData, ansibleExecutionsData]);
 
-  // Get recent executions
-  const recentExecutions = executionsData?.data.executions?.slice(0, 10) || [];
+  // Fetch unified executions for recent executions
+  const { data: unifiedExecutionsData, isLoading: unifiedExecutionsLoading } = useQuery(
+    'unified-executions',
+    () => executionAPI.getUnifiedExecutions({ per_page: 10 }),
+    { refetchOnWindowFocus: false }
+  );
+
+  // Get recent executions from unified API or fallback to separate APIs
+  const recentExecutions = unifiedExecutionsData?.data?.executions || [
+    ...(executionsData?.data.executions?.slice(0, 5) || []).map(exec => ({
+      ...exec,
+      type: 'workflow'
+    })),
+    ...(ansibleExecutionsData?.data.executions?.slice(0, 5) || []).map(exec => ({
+      ...exec,
+      type: 'ansible',
+      workflow: { name: exec.playbook_name || 'Ansible Playbook' },
+      device: { name: exec.inventory_name || 'Ansible Inventory' }
+    }))
+  ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 10);
 
   // Get device status counts
   const deviceStatusCounts = devicesData?.data.devices?.reduce((acc, device) => {
@@ -72,21 +105,27 @@ const Dashboard = () => {
     return acc;
   }, {}) || {};
 
-  // Calculate execution stats
-  const executionStats = executionsData?.data.executions?.reduce(
+  // Calculate execution stats from all available data
+  const allExecutions = [
+    ...(unifiedExecutionsData?.data?.executions || []),
+    ...(executionsData?.data.executions || []),
+    ...(ansibleExecutionsData?.data.executions || [])
+  ];
+  
+  const executionStats = allExecutions.reduce(
     (acc, exec) => {
       acc[exec.status] = (acc[exec.status] || 0) + 1;
       acc.total++;
       return acc;
     },
     { total: 0 }
-  ) || { total: 0 };
+  );
 
   const successRate = executionStats.total > 0 
     ? ((executionStats.completed || 0) / executionStats.total * 100).toFixed(1)
     : 0;
 
-  if (devicesLoading || workflowsLoading || executionsLoading) {
+  if (devicesLoading || workflowsLoading || executionsLoading || ansibleExecutionsLoading || unifiedExecutionsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600"></div>
@@ -118,6 +157,12 @@ const Dashboard = () => {
           value={stats.totalExecutions}
           icon={PlayIcon}
           color="purple"
+        />
+        <StatCard
+          title="Ansible Executions"
+          value={stats.totalAnsibleExecutions}
+          icon={PlayIcon}
+          color="indigo"
         />
         <StatCard
           title="Running Now"
@@ -216,7 +261,7 @@ const Dashboard = () => {
           <div className="flex items-center">
             <ClockIcon className="h-6 w-6 text-red-600 mr-2" />
             <h3 className="text-lg font-semibold text-gray-900">
-              Recent Workflow Executions
+              Recent Executions (Workflow + Ansible)
             </h3>
           </div>
           <Link
@@ -255,14 +300,14 @@ const Dashboard = () => {
                   <tr key={execution.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm font-medium text-gray-900">
-                        {execution.workflow.name}
+                        {execution.workflow?.name || execution.playbook_name}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
                         <DeviceTabletIcon className="h-4 w-4 text-gray-400 mr-2" />
                         <div className="text-sm text-gray-900">
-                          {execution.device.name}
+                          {execution.device?.name || execution.inventory_name || 'N/A'}
                         </div>
                       </div>
                     </td>
@@ -277,7 +322,7 @@ const Dashboard = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <Link
-                        to={`/executions/${execution.id}`}
+                        to={`/${execution.type === 'ansible' ? 'ansible-execution-detail' : 'executions'}/${execution.id}`}
                         className="text-red-600 hover:text-red-900"
                       >
                         View

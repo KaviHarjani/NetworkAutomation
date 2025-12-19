@@ -6,7 +6,7 @@ from django.db import models
 import json
 from .models import (
     Device, Workflow, WorkflowExecution,
-    SystemLog, WebhookConfiguration
+    SystemLog, WebhookConfiguration, AnsibleExecution
 )
 from .tasks import execute_workflow
 from .webhook_utils import WebhookManager
@@ -218,6 +218,45 @@ def assign_playbook_to_group(request):
 
     except Exception as e:
         return create_cors_response({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST", "OPTIONS"])
+def generate_group_inventory_api(request):
+    """API endpoint to generate Ansible inventory from device group"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = JsonResponse({})
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
+
+    try:
+        data = json.loads(request.body)
+        device_ids = data.get('device_ids', [])
+        group_name = data.get('group_name')
+
+        if not device_ids:
+            return create_cors_response({'error': 'device_ids are required'}, status=400)
+
+        # Import the function from ansible_utils
+        from .ansible_utils import generate_group_inventory
+        
+        # Generate inventory content
+        inventory_content = generate_group_inventory(device_ids, group_name)
+        
+        return create_cors_response({
+            'inventory_content': inventory_content,
+            'device_count': len(device_ids),
+            'group_name': group_name or 'auto-generated',
+            'format': 'ini'
+        })
+
+    except Exception as e:
+        return create_cors_response({'error': str(e)}, status=500)
+
 
 @csrf_exempt
 @require_http_methods(["POST", "OPTIONS"])
@@ -712,6 +751,96 @@ def workflow_execute(request):
 
 @csrf_exempt
 @require_http_methods(["GET", "OPTIONS"])
+def device_stats(request):
+    """API endpoint to get comprehensive device statistics including execution history"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = JsonResponse({})
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
+    
+    try:
+        devices = Device.objects.all()
+        device_stats_data = []
+        
+        for device in devices:
+            # Get workflow execution stats for this device
+            workflow_executions = WorkflowExecution.objects.filter(device=device)
+            ansible_executions = AnsibleExecution.objects.filter(
+                playbook__name__contains=device.name  # Match by device name in playbook
+            )
+            
+            # Calculate stats
+            workflow_completed = workflow_executions.filter(status='completed').count()
+            workflow_failed = workflow_executions.filter(status='failed').count()
+            workflow_running = workflow_executions.filter(status='running').count()
+            
+            ansible_completed = ansible_executions.filter(status='completed').count()
+            ansible_failed = ansible_executions.filter(status='failed').count()
+            ansible_running = ansible_executions.filter(status='running').count()
+            
+            device_stats_data.append({
+                'id': str(device.id),
+                'name': device.name,
+                'hostname': device.hostname,
+                'ip_address': device.ip_address,
+                'device_type': device.device_type,
+                'status': device.status,
+                'location': device.location,
+                'workflow_executions': {
+                    'total': workflow_executions.count(),
+                    'completed': workflow_completed,
+                    'failed': workflow_failed,
+                    'running': workflow_running,
+                    'success_rate': (
+                        round((workflow_completed / workflow_executions.count()) * 100, 1) 
+                        if workflow_executions.count() > 0 else 0
+                    )
+                },
+                'ansible_executions': {
+                    'total': ansible_executions.count(),
+                    'completed': ansible_completed,
+                    'failed': ansible_failed,
+                    'running': ansible_running,
+                    'success_rate': (
+                        round((ansible_completed / ansible_executions.count()) * 100, 1) 
+                        if ansible_executions.count() > 0 else 0
+                    )
+                },
+                'total_executions': workflow_executions.count() + ansible_executions.count(),
+                'total_successful': workflow_completed + ansible_completed,
+                'total_failed': workflow_failed + ansible_failed,
+                'overall_success_rate': (
+                    round(((workflow_completed + ansible_completed) / (workflow_executions.count() + ansible_executions.count())) * 100, 1) 
+                    if (workflow_executions.count() + ansible_executions.count()) > 0 else 0
+                ),
+                'last_execution': None,
+                'created_at': device.created_at.isoformat(),
+                'updated_at': device.updated_at.isoformat()
+            })
+        
+        return create_cors_response({
+            'device_stats': device_stats_data,
+            'total_devices': devices.count(),
+            'summary': {
+                'total_workflow_executions': WorkflowExecution.objects.count(),
+                'total_ansible_executions': AnsibleExecution.objects.count(),
+                'total_executions': WorkflowExecution.objects.count() + AnsibleExecution.objects.count(),
+                'devices_with_executions': len([d for d in device_stats_data if d['total_executions'] > 0]),
+                'devices_with_workflows': len([d for d in device_stats_data if d['workflow_executions']['total'] > 0]),
+                'devices_with_ansible': len([d for d in device_stats_data if d['ansible_executions']['total'] > 0])
+            }
+        })
+        
+    except Exception as e:
+        return create_cors_response({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET", "OPTIONS"])
 def execution_status(request, execution_id):
     """API endpoint to get workflow execution status"""
     # Handle CORS preflight request
@@ -777,6 +906,122 @@ def execution_status(request, execution_id):
         
     except WorkflowExecution.DoesNotExist:
         return create_cors_response({'error': 'Execution not found'}, status=404)
+    except Exception as e:
+        return create_cors_response({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET", "OPTIONS"])
+def unified_execution_list(request):
+    """API endpoint to list both workflow and Ansible executions"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = JsonResponse({})
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
+    
+    try:
+        # Get both workflow and Ansible executions
+        workflow_executions = WorkflowExecution.objects.all()
+        ansible_executions = AnsibleExecution.objects.all()
+        
+        # Apply filters to workflow executions
+        status = request.GET.get('status')
+        if status:
+            workflow_executions = workflow_executions.filter(status=status)
+        
+        workflow_id = request.GET.get('workflow_id')
+        if workflow_id:
+            workflow_executions = workflow_executions.filter(workflow_id=workflow_id)
+        
+        device_id = request.GET.get('device_id')
+        if device_id:
+            workflow_executions = workflow_executions.filter(device_id=device_id)
+            ansible_executions = ansible_executions.filter(
+                playbook__name__contains=device_id  # Filter by device name in playbook
+            )
+        
+        # Apply filters to Ansible executions
+        ansible_status = request.GET.get('ansible_status')
+        if ansible_status:
+            ansible_executions = ansible_executions.filter(status=ansible_status)
+        
+        playbook_id = request.GET.get('playbook_id')
+        if playbook_id:
+            ansible_executions = ansible_executions.filter(playbook_id=playbook_id)
+        
+        # Pagination
+        page = int(request.GET.get('page', 1))
+        per_page = int(request.GET.get('per_page', 10))
+        
+        # Combine and sort by creation date
+        combined_executions = []
+        
+        # Add workflow executions
+        for execution in workflow_executions.order_by('-created_at'):
+            combined_executions.append({
+                'id': str(execution.id),
+                'type': 'workflow',
+                'status': execution.status,
+                'started_at': execution.started_at.isoformat() if execution.started_at else None,
+                'completed_at': execution.completed_at.isoformat() if execution.completed_at else None,
+                'created_at': execution.created_at.isoformat(),
+                'workflow': {
+                    'id': str(execution.workflow.id),
+                    'name': execution.workflow.name
+                },
+                'device': {
+                    'id': str(execution.device.id),
+                    'name': execution.device.name
+                },
+                'current_stage': execution.current_stage,
+                'error_message': execution.error_message
+            })
+        
+        # Add Ansible executions
+        for execution in ansible_executions.order_by('-created_at'):
+            combined_executions.append({
+                'id': str(execution.id),
+                'type': 'ansible',
+                'status': execution.status,
+                'started_at': execution.started_at.isoformat() if execution.started_at else None,
+                'completed_at': execution.completed_at.isoformat() if execution.completed_at else None,
+                'created_at': execution.created_at.isoformat(),
+                'playbook': {
+                    'id': str(execution.playbook.id),
+                    'name': execution.playbook.name
+                },
+                'inventory': {
+                    'id': str(execution.inventory.id),
+                    'name': execution.inventory.name
+                },
+                'execution_time': execution.execution_time,
+                'return_code': execution.return_code,
+                'stdout': execution.stdout,
+                'stderr': execution.stderr
+            })
+        
+        # Sort all executions by created_at (descending)
+        combined_executions.sort(key=lambda x: x['created_at'], reverse=True)
+        
+        # Apply pagination
+        total_count = len(combined_executions)
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        paginated_executions = combined_executions[start_idx:end_idx]
+        
+        return create_cors_response({
+            'executions': paginated_executions,
+            'total': total_count,
+            'page': page,
+            'per_page': per_page,
+            'has_next': end_idx < total_count,
+            'has_previous': page > 1
+        })
+        
     except Exception as e:
         return create_cors_response({'error': str(e)}, status=500)
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { PlusIcon, MagnifyingGlassIcon, FunnelIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, MagnifyingGlassIcon, FunnelIcon, ClipboardDocumentIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { deviceAPI, ansibleAPI } from '../services/api';
 
@@ -14,6 +14,8 @@ const DeviceMapping = () => {
   const [selectedPlaybook, setSelectedPlaybook] = useState('');
   const [assignmentType, setAssignmentType] = useState('workflow'); // 'workflow' or 'playbook'
   const [expandedGroups, setExpandedGroups] = useState({});
+  const [inventoryModal, setInventoryModal] = useState({ isOpen: false, content: '', groupName: '' });
+  const [loadingInventory, setLoadingInventory] = useState(false);
 
   useEffect(() => {
     fetchDeviceGroupings();
@@ -86,6 +88,30 @@ const DeviceMapping = () => {
     } catch (error) {
       toast.error('Failed to assign playbook: ' + (error.response?.data?.error || error.message));
     }
+  };
+
+  const handleGenerateInventory = async (group) => {
+    try {
+      setLoadingInventory(true);
+      const response = await deviceAPI.generateGroupInventory(group.device_ids);
+      setInventoryModal({
+        isOpen: true,
+        content: response.data.inventory_content,
+        groupName: response.data.group_name
+      });
+    } catch (error) {
+      toast.error('Failed to generate inventory: ' + (error.response?.data?.error || error.message));
+    } finally {
+      setLoadingInventory(false);
+    }
+  };
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text).then(() => {
+      toast.success('Inventory content copied to clipboard!');
+    }).catch(() => {
+      toast.error('Failed to copy to clipboard');
+    });
   };
 
   const filteredGroupings = groupings.filter(group =>
@@ -243,6 +269,13 @@ const DeviceMapping = () => {
                             {expandedGroups[index] ? 'Hide' : 'Show'} Devices
                           </button>
                           <button
+                            onClick={() => handleGenerateInventory(group)}
+                            disabled={loadingInventory}
+                            className="px-3 py-1 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
+                          >
+                            {loadingInventory ? 'Generating...' : 'Generate Inventory'}
+                          </button>
+                          <button
                             onClick={() => setSelectedGroup(group)}
                             className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
                           >
@@ -344,6 +377,55 @@ const DeviceMapping = () => {
                   className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
                 >
                   Assign {assignmentType === 'workflow' ? 'Workflow' : 'Playbook'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Inventory Modal */}
+        {inventoryModal.isOpen && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+              <div className="flex justify-between items-center mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    Generated Ansible Inventory
+                  </h3>
+                  <p className="text-sm text-gray-600">
+                    Group: {inventoryModal.groupName} • {groupings.find(g => g.device_ids === inventoryModal.groupName)?.device_count || 'N/A'} devices
+                  </p>
+                </div>
+                <button
+                  onClick={() => setInventoryModal({ isOpen: false, content: '', groupName: '' })}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              
+              <div className="flex-1 overflow-hidden">
+                <div className="bg-gray-50 border border-gray-200 rounded-md p-4 h-full overflow-auto">
+                  <pre className="text-sm text-gray-800 whitespace-pre-wrap font-mono">
+                    {inventoryModal.content}
+                  </pre>
+                </div>
+              </div>
+              
+              <div className="flex justify-end gap-3 mt-4">
+                <button
+                  onClick={() => copyToClipboard(inventoryModal.content)}
+                  className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
+                >
+                  Copy to Clipboard
+                </button>
+                <button
+                  onClick={() => setInventoryModal({ isOpen: false, content: '', groupName: '' })}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                >
+                  Close
                 </button>
               </div>
             </div>

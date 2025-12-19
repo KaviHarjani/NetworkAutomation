@@ -179,6 +179,9 @@ export const deviceAPI = {
   assignPlaybookToGroup: (playbookId, deviceIds) =>
     api.post('/api/devices/assign-playbook/', { playbook_id: playbookId, device_ids: deviceIds }),
 
+  generateGroupInventory: (deviceIds, groupName) =>
+    api.post('/api/devices/generate-inventory/', { device_ids: deviceIds, group_name: groupName }),
+
   executeWorkflow: (executionData) =>
     api.post('/api/executions/execute/', executionData),
 };
@@ -212,6 +215,9 @@ export const executionAPI = {
   getExecutions: (params = {}) =>
     api.get('/api/executions/', { params }),
   
+  getUnifiedExecutions: (params = {}) =>
+    api.get('/api/executions/unified/', { params }),
+  
   getExecution: (executionId) =>
     api.get(`/api/executions/${executionId}/`),
   
@@ -225,7 +231,7 @@ export const dashboardAPI = {
     api.get('/api/dashboard/stats/'),
   
   getRecentExecutions: (limit = 10) =>
-    api.get('/api/executions/', { params: { per_page: limit } }),
+    api.get('/api/executions/unified/', { params: { per_page: limit } }),
   
   getExecutionStats: (days = 30) =>
     api.get('/api/dashboard/execution-stats/', { params: { days } }),
