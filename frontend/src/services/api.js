@@ -320,10 +320,24 @@ export const ansibleAPI = {
     api.get('/api/ansible-inventories/', { params }),
 
   createInventory: (inventoryData) =>
-    api.post('/api/ansible-inventories/', inventoryData),
+    api.post('/api/ansible-inventories/', {
+      name: inventoryData.name,
+      description: inventoryData.description,
+      inventory_type: inventoryData.inventory_type,
+      inventory_content: inventoryData.inventory_content,
+      group_variables_dict: inventoryData.group_variables_dict || {},
+      host_variables_dict: inventoryData.host_variables_dict || {}
+    }),
 
   updateInventory: (inventoryId, inventoryData) =>
-    api.put(`/api/ansible-inventories/${inventoryId}/`, inventoryData),
+    api.put(`/api/ansible-inventories/${inventoryId}/`, {
+      name: inventoryData.name,
+      description: inventoryData.description,
+      inventory_type: inventoryData.inventory_type,
+      inventory_content: inventoryData.inventory_content,
+      group_variables_dict: inventoryData.group_variables_dict || {},
+      host_variables_dict: inventoryData.host_variables_dict || {}
+    }),
 
   deleteInventory: (inventoryId) =>
     api.delete(`/api/ansible-inventories/${inventoryId}/`),
