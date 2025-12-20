@@ -55,6 +55,9 @@ urlpatterns = [
          name='ansible_playbook_validate'),
     path('ansible-inventories/validate/', csrf_exempt_views.ansible_inventory_validate,
          name='ansible_inventory_validate'),
+    # Synchronous Ansible playbook execution endpoint
+    path('ansible/execute-sync/', csrf_exempt_views.ansible_playbook_execute_sync,
+         name='ansible_playbook_execute_sync'),
     # Dynamic execution endpoint with variables - BEFORE router
     path('ansible-playbooks/execute-dynamic/', csrf_exempt_views.ansible_playbook_execute_dynamic,
          name='ansible_playbook_execute_dynamic'),

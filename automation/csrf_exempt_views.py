@@ -4,7 +4,11 @@ CSRF-exempt views for Ansible validation endpoints
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
-from .ansible_utils import validate_ansible_playbook_content, validate_ansible_inventory_content
+from django.utils import timezone
+from .ansible_utils import (
+    validate_ansible_playbook_content, 
+    validate_ansible_inventory_content
+)
 import json
 
 
@@ -401,6 +405,125 @@ def ansible_playbook_execute_on_device_background(request):
     except json.JSONDecodeError:
         return create_cors_response({'error': 'Invalid JSON'}, status=400)
     except Exception as e:
+        return create_cors_response({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST", "OPTIONS"])
+def ansible_playbook_execute_sync(request):
+    """Execute Ansible playbook synchronously via API (synchronous version of execute_ansible_playbook_task)"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = JsonResponse({})
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
+    
+    try:
+        # Parse request data
+        if request.content_type == 'application/json':
+            data = json.loads(request.body)
+        else:
+            data = request.POST.dict()
+        
+        # Extract required fields
+        execution_id = data.get('execution_id')
+        
+        # Validate required fields
+        if not execution_id:
+            return create_cors_response({
+                'error': 'execution_id is required'
+            }, status=400)
+        
+        # Get execution record from database
+        from .models import AnsibleExecution
+        try:
+            execution = AnsibleExecution.objects.get(id=execution_id)
+        except AnsibleExecution.DoesNotExist:
+            return create_cors_response({
+                'error': f'Execution with ID {execution_id} not found'
+            }, status=404)
+        
+        # Get playbook and inventory
+        playbook = execution.playbook
+        inventory = execution.inventory
+        
+        # Get execution parameters
+        extra_vars = execution.get_extra_vars()
+        tags = execution.get_tags_list()
+        skip_tags = execution.get_skip_tags_list()
+        
+        # Update execution status to running
+        execution.status = 'running'
+        execution.started_at = timezone.now()
+        execution.save()
+        
+        # Execute playbook synchronously
+        from .ansible_utils import AnsibleRunner
+        runner = AnsibleRunner()
+        
+        execution_result = runner.execute_playbook(
+            playbook_content=playbook.playbook_content,
+            inventory_content=inventory.inventory_content,
+            extra_vars=extra_vars,
+            tags=tags if tags else None,
+            skip_tags=skip_tags if skip_tags else None,
+            execution_id=execution_id
+        )
+        
+        # Update execution record with results
+        execution.status = 'completed' if execution_result['return_code'] == 0 else 'failed'
+        execution.completed_at = timezone.now()
+        execution.execution_time = execution_result.get('execution_time', 0)
+        execution.stdout = execution_result['stdout']
+        execution.stderr = execution_result['stderr']
+        execution.return_code = execution_result['return_code']
+        execution.save()
+        
+        # Format response
+        response_data = {
+            'success': execution_result['return_code'] == 0,
+            'execution_id': str(execution_id),
+            'execution_time': execution_result.get('execution_time', 0),
+            'return_code': execution_result['return_code'],
+            'playbook_info': {
+                'name': playbook.name,
+                'id': str(playbook.id)
+            },
+            'inventory_info': {
+                'name': inventory.name,
+                'id': str(inventory.id)
+            },
+            'execution_parameters': {
+                'extra_vars': extra_vars,
+                'tags': tags,
+                'skip_tags': skip_tags
+            }
+        }
+        
+        if execution_result['return_code'] == 0:
+            response_data['result'] = execution_result['stdout']
+        else:
+            response_data['error'] = execution_result['stderr']
+        
+        return create_cors_response(response_data, status=200 if response_data['success'] else 400)
+        
+    except json.JSONDecodeError:
+        return create_cors_response({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        # Update execution status to failed if we have an execution_id
+        if 'execution_id' in locals():
+            try:
+                execution = AnsibleExecution.objects.get(id=execution_id)
+                execution.status = 'failed'
+                execution.stderr = f"Execution error: {str(e)}"
+                execution.completed_at = timezone.now()
+                execution.save()
+            except:
+                pass
+        
         return create_cors_response({'error': str(e)}, status=500)
 
 
