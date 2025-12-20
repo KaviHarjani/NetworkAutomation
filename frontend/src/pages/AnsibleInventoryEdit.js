@@ -23,6 +23,10 @@ const AnsibleInventoryEdit = () => {
   const [showExamples, setShowExamples] = useState(false);
   const [showApiExamples, setShowApiExamples] = useState(false);
   const [showVariables, setShowVariables] = useState(true);
+
+  // Debug logging
+  console.log('AnsibleInventoryEdit component loaded with ID:', id);
+  console.log('Current activeTab:', activeTab);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -75,12 +79,12 @@ const AnsibleInventoryEdit = () => {
   };
 
   const addVariable = (type) => {
-    const timestamp = Date.now();
+    const newId = `var_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     setFormData(prev => ({
       ...prev,
       [`${type}_variables_dict`]: {
         ...prev[`${type}_variables_dict`],
-        [`variable_${timestamp}`]: ''
+        [newId]: ''
       }
     }));
   };
@@ -94,6 +98,37 @@ const AnsibleInventoryEdit = () => {
         [`${type}_variables_dict`]: newVars
       };
     });
+  };
+
+  const updateVariableKey = (type, oldKey, newKey) => {
+    if (newKey === oldKey || !newKey.trim()) return;
+    
+    setFormData(prev => {
+      const currentVars = prev[`${type}_variables_dict`];
+      const value = currentVars[oldKey];
+      const newVars = { ...currentVars };
+      
+      // Only proceed if new key doesn't already exist
+      if (!newVars[newKey]) {
+        delete newVars[oldKey];
+        newVars[newKey] = value;
+        return {
+          ...prev,
+          [`${type}_variables_dict`]: newVars
+        };
+      }
+      return prev;
+    });
+  };
+
+  const updateVariableValue = (type, key, value) => {
+    setFormData(prev => ({
+      ...prev,
+      [`${type}_variables_dict`]: {
+        ...prev[`${type}_variables_dict`],
+        [key]: value
+      }
+    }));
   };
 
   const handleValidate = async () => {
@@ -276,6 +311,30 @@ all:
           <p className="mt-2 text-gray-600">
             Update the inventory configuration, hosts, and variables
           </p>
+          
+          {/* Debug test buttons */}
+          <div className="mt-4 space-x-2">
+            <button
+              type="button"
+              onClick={() => {
+                console.log('Test: Switching to variables tab');
+                setActiveTab('variables');
+              }}
+              className="px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600"
+            >
+              Test Variables Tab
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                console.log('Test: Switching to examples tab');
+                setActiveTab('examples');
+              }}
+              className="px-3 py-1 bg-green-500 text-white text-sm rounded hover:bg-green-600"
+            >
+              Test Examples Tab
+            </button>
+          </div>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -338,8 +397,14 @@ all:
                 ].map((tab) => (
                   <button
                     key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      console.log('Tab clicked:', tab.id);
+                      setActiveTab(tab.id);
+                    }}
+                    className={`py-4 px-1 border-b-2 font-medium text-sm cursor-pointer select-none ${
                       activeTab === tab.id
                         ? 'border-green-500 text-green-600'
                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -421,21 +486,14 @@ all:
                           <input
                             type="text"
                             value={key}
-                            onChange={(e) => {
-                              const newKey = e.target.value;
-                              const currentValue = formData.group_variables_dict[key];
-                              const newVars = { ...formData.group_variables_dict };
-                              delete newVars[key];
-                              newVars[newKey] = currentValue;
-                              setFormData(prev => ({ ...prev, group_variables_dict: newVars }));
-                            }}
+                            onChange={(e) => updateVariableKey('group', key, e.target.value)}
                             className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
                             placeholder="variable_name"
                           />
                           <input
                             type="text"
                             value={value}
-                            onChange={(e) => handleVariableChange('group', key, e.target.value)}
+                            onChange={(e) => updateVariableValue('group', key, e.target.value)}
                             className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
                             placeholder="variable_value"
                           />
@@ -476,21 +534,14 @@ all:
                           <input
                             type="text"
                             value={key}
-                            onChange={(e) => {
-                              const newKey = e.target.value;
-                              const currentValue = formData.host_variables_dict[key];
-                              const newVars = { ...formData.host_variables_dict };
-                              delete newVars[key];
-                              newVars[newKey] = currentValue;
-                              setFormData(prev => ({ ...prev, host_variables_dict: newVars }));
-                            }}
+                            onChange={(e) => updateVariableKey('host', key, e.target.value)}
                             className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
                             placeholder="variable_name"
                           />
                           <input
                             type="text"
                             value={value}
-                            onChange={(e) => handleVariableChange('host', key, e.target.value)}
+                            onChange={(e) => updateVariableValue('host', key, e.target.value)}
                             className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
                             placeholder="variable_value"
                           />
@@ -592,8 +643,13 @@ all:
                       <h3 className="text-lg font-medium text-gray-900">API Examples</h3>
                       <button
                         type="button"
-                        onClick={() => setShowApiExamples(!showApiExamples)}
-                        className="text-sm text-gray-600 hover:text-gray-800"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          console.log('API Examples toggled:', !showApiExamples);
+                          setShowApiExamples(!showApiExamples);
+                        }}
+                        className="text-sm text-gray-600 hover:text-gray-800 cursor-pointer"
                       >
                         {showApiExamples ? <EyeSlashIcon className="w-4 h-4 inline mr-1" /> : <EyeIcon className="w-4 h-4 inline mr-1" />}
                         {showApiExamples ? 'Hide' : 'Show'} API Examples
