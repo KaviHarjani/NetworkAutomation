@@ -246,7 +246,7 @@ const ExecutionDetail = () => {
         <div className="bg-white rounded-xl shadow-lg p-6">
           <h2 className="text-xl font-semibold text-gray-900 mb-4">Ansible Details</h2>
           <div className="space-y-4">
-            {executionData.extra_vars && Object.keys(executionData.extra_vars).length > 0 && (
+            {executionData.extra_vars && typeof executionData.extra_vars === 'object' && Object.keys(executionData.extra_vars).length > 0 && (
               <div>
                 <label className="block text-sm font-medium text-gray-700">Extra Variables</label>
                 <div className="mt-1 bg-gray-50 rounded-lg p-3">
@@ -255,7 +255,7 @@ const ExecutionDetail = () => {
               </div>
             )}
             
-            {executionData.tags && executionData.tags.length > 0 && (
+            {executionData.tags && Array.isArray(executionData.tags) && executionData.tags.length > 0 && (
               <div>
                 <label className="block text-sm font-medium text-gray-700">Tags</label>
                 <div className="mt-1">
@@ -272,7 +272,7 @@ const ExecutionDetail = () => {
       )}
 
       {/* Workflow-specific details */}
-      {!isAnsibleExecution && executionData.command_executions && (
+      {!isAnsibleExecution && executionData.command_executions && Array.isArray(executionData.command_executions) && (
         <div className="bg-white rounded-xl shadow-lg p-6">
           <h2 className="text-xl font-semibold text-gray-900 mb-4">Command Executions</h2>
           <div className="space-y-4">
