@@ -4,7 +4,8 @@ import toast from 'react-hot-toast';
 import { deviceAPI, ansibleAPI } from '../services/api';
 
 const DeviceMapping = () => {
-  const [activeTab, setActiveTab] = useState('groupings'); // 'groupings' or 'mappings'
+  const [activeTab, setActiveTab] = useState('groupings'); // 'groupings', 'mappings'
+  const [showApiDocs, setShowApiDocs] = useState(false);
   const [groupings, setGroupings] = useState([]);
   const [mappings, setMappings] = useState([]);
   const [devices, setDevices] = useState([]);
@@ -178,6 +179,17 @@ const DeviceMapping = () => {
             >
               <Cog6ToothIcon className="h-4 w-4" />
               Playbook Mappings
+            </button>
+            <button
+              onClick={() => setShowApiDocs(!showApiDocs)}
+              className={`${
+                showApiDocs
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              } whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm flex items-center gap-2`}
+            >
+              <ClipboardDocumentIcon className="h-4 w-4" />
+              API Usage
             </button>
           </nav>
         </div>
@@ -368,6 +380,15 @@ const DeviceMapping = () => {
             devices={devices}
             playbooks={playbooks}
             onRefresh={fetchMappings}
+          />
+        )}
+
+        {/* API Documentation Section */}
+        {showApiDocs && (
+          <ApiDocumentationTab 
+            mappings={mappings}
+            devices={devices}
+            playbooks={playbooks}
           />
         )}
 
@@ -1068,6 +1089,398 @@ const CreateMappingModal = ({ mapping, devices, playbooks, onClose, onSave }) =>
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+};
+
+// API Documentation Tab Component
+const ApiDocumentationTab = ({ mappings, devices, playbooks }) => {
+  const [selectedExample, setSelectedExample] = useState('generic-automation');
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text).then(() => {
+      toast.success('Copied to clipboard!');
+    }).catch(() => {
+      toast.error('Failed to copy to clipboard');
+    });
+  };
+
+  const generateGenericAutomationExample = () => {
+    if (devices.length === 0 || mappings.length === 0) {
+      return {
+        description: 'No devices or mappings available for examples',
+        curl: '# Add devices and create mappings to see examples here',
+        json: {}
+      };
+    }
+
+    const device = devices[0];
+    const mapping = mappings.find(m => m.target_devices_info?.some(d => d.id === device.id)) || mappings[0];
+    
+    // Extract parameters from playbook content if available
+    const exampleParams = extractPlaybookParameters(mapping);
+    
+    const exampleData = {
+      hostname: device.hostname,
+      workflow: mapping.workflow_type,
+      params: exampleParams
+    };
+
+    return {
+      description: `Execute ${mapping.workflow_type} workflow on ${device.name}`,
+      curl: `curl -X POST http://localhost:8000/api/automation/generic/ \\
+  -H "Content-Type: application/json" \\
+  -d '${JSON.stringify(exampleData, null, 2)}'`,
+      json: exampleData,
+      playbookParams: exampleParams
+    };
+  };
+
+  // Extract parameters from playbook content
+  const extractPlaybookParameters = (mapping) => {
+    if (!mapping || !mapping.playbook_content) {
+      // Fallback to default examples if no playbook content
+      return mapping?.required_params_list?.length > 0 ? 
+        mapping.required_params_list.reduce((acc, param) => {
+          acc[param] = param === 'vlan_id' ? 100 : 
+                     param === 'ports' ? ["Gi1/0/1"] : 
+                     param === 'delay' ? 300 : "example_value";
+          return acc;
+        }, {}) : 
+        { "example_param": "value" };
+    }
+
+    try {
+      const playbookContent = mapping.playbook_content;
+      const params = {};
+      const requiredParams = mapping.required_params_list || [];
+      
+      // Look for common parameter patterns in YAML
+      const paramPatterns = [
+        /vars:\s*\n\s*([^\n]*param[^\n]*)/gi,
+        /- name:\s*[^\n]*\n\s*[^\n]*\n\s*[^\n]*\n\s*([^\n]*)/gi,
+        /when:\s*([^\n]+)/gi
+      ];
+      
+      // Extract variables section
+      const varsMatch = playbookContent.match(/vars:\s*\n((?:\s{2,}[^\n]*\n?)*)/gi);
+      if (varsMatch) {
+        const varsSection = varsMatch[0];
+        const varLines = varsSection.match(/\s{2,}[^:\n]+:[^\n]*/g);
+        if (varLines) {
+          varLines.forEach(line => {
+            const [key, value] = line.split(':').map(s => s.trim());
+            if (key && value) {
+              params[key] = value === 'true' ? true : value === 'false' ? false : 
+                           !isNaN(value) ? parseInt(value) : value;
+            }
+          });
+        }
+      }
+      
+      // Add required parameters with example values
+      requiredParams.forEach(param => {
+        if (!params[param]) {
+          if (param.toLowerCase().includes('id')) params[param] = 100;
+          else if (param.toLowerCase().includes('port')) params[param] = ["Gi1/0/1"];
+          else if (param.toLowerCase().includes('delay')) params[param] = 300;
+          else if (param.toLowerCase().includes('name')) params[param] = "EXAMPLE_NAME";
+          else if (param.toLowerCase().includes('type')) params[param] = "example_type";
+          else if (param.toLowerCase().includes('config')) params[param] = true;
+          else params[param] = "example_value";
+        }
+      });
+      
+      // If no specific parameters found, provide workflow-specific examples
+      if (Object.keys(params).length === 0) {
+        const workflowType = mapping.workflow_type?.toLowerCase();
+        if (workflowType?.includes('reboot')) {
+          params.delay = 300;
+          params.save_config = true;
+        } else if (workflowType?.includes('vlan')) {
+          params.vlan_id = 100;
+          params.vlan_name = "EXAMPLE_VLAN";
+          params.ports = ["Gi1/0/1"];
+        } else if (workflowType?.includes('backup')) {
+          params.backup_type = "full";
+          params.include_running = true;
+          params.include_startup = true;
+        } else {
+          params.example_param = "value";
+        }
+      }
+      
+      return params;
+    } catch (error) {
+      console.error('Error parsing playbook content:', error);
+      return { "example_param": "value" };
+    }
+  };
+
+  const generateMappingsListExample = () => ({
+    description: 'List all device-playbook mappings',
+    curl: `curl -X GET http://localhost:8000/api/automation/mappings/ \\
+  -H "Content-Type: application/json"`,
+    json: {}
+  });
+
+  const generateCreateMappingExample = () => {
+    if (devices.length === 0 || playbooks.length === 0) {
+      return {
+        description: 'No devices or playbooks available for examples',
+        curl: '# Add devices and playbooks to see examples here',
+        json: {}
+      };
+    }
+
+    const device = devices[0];
+    const playbook = playbooks[0];
+    
+    // Extract playbook parameters for the example
+    const playbookParams = extractPlaybookParameters({ 
+      workflow_type: 'reboot', 
+      playbook_content: playbook.content,
+      required_params_list: []
+    });
+    
+    const exampleData = {
+      name: "Example Device Mapping",
+      description: "Example mapping for testing",
+      workflow_type: "reboot",
+      playbook: playbook.id,
+      priority: 100,
+      is_active: true,
+      target_devices: [device.id],
+      default_variables_dict: playbookParams,
+      required_params_list: Object.keys(playbookParams)
+    };
+
+    return {
+      description: `Create mapping targeting ${device.name}`,
+      curl: `curl -X POST http://localhost:8000/api/automation/mappings/ \\
+  -H "Content-Type: application/json" \\
+  -d '${JSON.stringify(exampleData, null, 2)}'`,
+      json: exampleData,
+      playbookParams: playbookParams
+    };
+  };
+
+  const examples = {
+    'generic-automation': generateGenericAutomationExample(),
+    'list-mappings': generateMappingsListExample(),
+    'create-mapping': generateCreateMappingExample()
+  };
+
+  const currentExample = examples[selectedExample];
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="bg-white rounded-lg shadow-sm border p-6">
+        <div className="flex justify-between items-center mb-4">
+          <div>
+            <h2 className="text-xl font-semibold text-gray-900">API Usage Documentation</h2>
+            <p className="text-sm text-gray-600 mt-1">
+              Copy and test these API calls to interact with the automation system
+            </p>
+          </div>
+        </div>
+
+        {/* Example Selector */}
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-gray-700 mb-3">
+            Select Example
+          </label>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {Object.entries(examples).map(([key, example]) => (
+              <button
+                key={key}
+                onClick={() => setSelectedExample(key)}
+                className={`p-3 text-left border rounded-lg transition-colors ${
+                  selectedExample === key
+                    ? 'border-blue-500 bg-blue-50 text-blue-900'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <div className="font-medium text-sm">
+                  {key === 'generic-automation' && '🚀 Generic Automation'}
+                  {key === 'list-mappings' && '📋 List Mappings'}
+                  {key === 'create-mapping' && '➕ Create Mapping'}
+                </div>
+                <div className="text-xs text-gray-600 mt-1">
+                  {example.description}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Current Example */}
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-medium text-gray-900">
+              {selectedExample === 'generic-automation' && '🚀 Generic Automation Endpoint'}
+              {selectedExample === 'list-mappings' && '📋 List Mappings Endpoint'}
+              {selectedExample === 'create-mapping' && '➕ Create Mapping Endpoint'}
+            </h3>
+            <button
+              onClick={() => copyToClipboard(currentExample.curl)}
+              className="px-3 py-1 text-sm bg-gray-600 text-white rounded-md hover:bg-gray-700 flex items-center gap-2"
+            >
+              <ClipboardDocumentIcon className="h-4 w-4" />
+              Copy cURL
+            </button>
+          </div>
+
+          <div className="text-sm text-gray-600 mb-3">
+            {currentExample.description}
+          </div>
+
+          {/* Playbook Parameters Information */}
+          {currentExample.playbookParams && (
+            <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+              <div className="font-medium text-blue-800 mb-3">
+                {selectedExample === 'generic-automation' ? '📋 Parameters for this Playbook' : '📋 Example Playbook Parameters'}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {Object.entries(currentExample.playbookParams).map(([key, value]) => (
+                  <div key={key} className="bg-white border border-blue-200 rounded p-3">
+                    <div className="font-medium text-gray-900 text-sm">{key}</div>
+                    <div className="text-xs text-gray-600 mt-1">
+                      Example: <code className="bg-gray-100 px-1 rounded">{typeof value === 'object' ? JSON.stringify(value) : String(value)}</code>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="text-xs text-blue-700 mt-3">
+                💡 These parameters are extracted from the playbook configuration and mapping settings
+              </div>
+            </div>
+          )}
+
+          {/* cURL Command */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              cURL Command
+            </label>
+            <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto">
+              <pre className="text-sm">{currentExample.curl}</pre>
+            </div>
+          </div>
+
+          {/* JSON Body (if applicable) */}
+          {Object.keys(currentExample.json).length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                JSON Request Body
+              </label>
+              <div className="bg-gray-50 border border-gray-200 p-4 rounded-lg overflow-x-auto">
+                <pre className="text-sm text-gray-800">
+                  {JSON.stringify(currentExample.json, null, 2)}
+                </pre>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Additional Information */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Response Format */}
+        <div className="bg-white rounded-lg shadow-sm border p-6">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">📤 Response Format</h3>
+          <div className="bg-gray-50 border border-gray-200 p-4 rounded-lg overflow-x-auto">
+            <pre className="text-sm text-gray-800">
+{`{
+  "execution_id": "uuid-here",
+  "task_id": "celery-task-id",
+  "message": "Generic automation execution started successfully",
+  "device_info": {
+    "hostname": "sw-core-01",
+    "name": "Core Switch 01",
+    "ip_address": "192.168.1.10",
+    "device_type": "switch",
+    "vendor": "Cisco",
+    "model": "Catalyst 2960X",
+    "os_version": "15.2(7)E10"
+  },
+  "playbook_info": {
+    "id": "playbook-uuid",
+    "name": "Device Reboot Playbook",
+    "description": "Playbook to reboot network devices"
+  },
+  "workflow_type": "reboot",
+  "mapping_used": {
+    "id": "mapping-uuid",
+    "name": "Cisco Switch Reboot",
+    "priority": 100
+  },
+  "variables_used": {
+    "device_name": "Core Switch 01",
+    "device_hostname": "sw-core-01",
+    "workflow_type": "reboot",
+    "delay": 300,
+    "save_config": true
+  }
+}`}
+            </pre>
+          </div>
+        </div>
+
+        {/* Quick Tips */}
+        <div className="bg-white rounded-lg shadow-sm border p-6">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">💡 Quick Tips</h3>
+          <div className="space-y-3 text-sm text-gray-600">
+            <div className="flex items-start gap-2">
+              <span className="text-blue-600 font-medium">•</span>
+              <span>Replace <code className="bg-gray-100 px-1 rounded">localhost:8000</code> with your API base URL</span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-blue-600 font-medium">•</span>
+              <span>Device hostnames must match exactly what's in your device database</span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-blue-600 font-medium">•</span>
+              <span>Workflow types are defined in your playbook mappings</span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-blue-600 font-medium">•</span>
+              <span>Check the Mappings tab to see available workflow types</span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-blue-600 font-medium">•</span>
+              <span>Use the priority system to control which mapping gets used</span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-blue-600 font-medium">•</span>
+              <span>Higher priority mappings take precedence over lower ones</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Status Codes */}
+      <div className="bg-white rounded-lg shadow-sm border p-6">
+        <h3 className="text-lg font-medium text-gray-900 mb-4">📊 HTTP Status Codes</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+            <div className="font-medium text-green-800">200 OK</div>
+            <div className="text-sm text-green-600">Success - Data retrieved</div>
+          </div>
+          <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="font-medium text-blue-800">201 Created</div>
+            <div className="text-sm text-blue-600">Success - Resource created</div>
+          </div>
+          <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <div className="font-medium text-yellow-800">202 Accepted</div>
+            <div className="text-sm text-yellow-600">Success - Async execution started</div>
+          </div>
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+            <div className="font-medium text-red-800">400/404/500</div>
+            <div className="text-sm text-red-600">Error - Check response message</div>
+          </div>
+        </div>
       </div>
     </div>
   );

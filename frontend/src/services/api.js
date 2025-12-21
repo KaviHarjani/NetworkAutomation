@@ -196,6 +196,10 @@ export const deviceAPI = {
 
   executeWorkflow: (executionData) =>
     api.post('/api/executions/execute/', executionData),
+
+  // Generic automation endpoint
+  executeGenericAutomation: (automationData) =>
+    api.post('/api/automation/generic/', automationData),
 };
 
 // Workflow API
