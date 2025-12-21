@@ -182,6 +182,18 @@ export const deviceAPI = {
   generateGroupInventory: (deviceIds, groupName) =>
     api.post('/api/devices/generate-inventory/', { device_ids: deviceIds, group_name: groupName }),
 
+  getMappings: () =>
+    api.get('/api/automation/mappings/'),
+
+  createMapping: (mappingData) =>
+    api.post('/api/automation/mappings/', mappingData),
+
+  updateMapping: (mappingId, mappingData) =>
+    api.put(`/api/automation/mappings/${mappingId}/`, mappingData),
+
+  deleteMapping: (mappingId) =>
+    api.delete(`/api/automation/mappings/${mappingId}/`),
+
   executeWorkflow: (executionData) =>
     api.post('/api/executions/execute/', executionData),
 };

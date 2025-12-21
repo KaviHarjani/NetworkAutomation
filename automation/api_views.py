@@ -6,7 +6,7 @@ from django.db import models
 import json
 from .models import (
     Device, Workflow, WorkflowExecution,
-    SystemLog, WebhookConfiguration, AnsibleExecution
+    SystemLog, WebhookConfiguration, AnsibleExecution, DevicePlaybookMapping
 )
 from .tasks import execute_workflow
 from .webhook_utils import WebhookManager

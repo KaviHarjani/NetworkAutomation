@@ -791,3 +791,110 @@ class AnsibleExecutionHost(models.Model):
     
     def __str__(self):
         return f"{self.hostname} - {self.status}"
+
+
+class DevicePlaybookMapping(models.Model):
+    """Model for mapping device metadata to Ansible playbooks for intelligent routing"""
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=100, help_text="Human-readable name for this mapping")
+    description = models.TextField(blank=True, help_text="Description of what this mapping does")
+    
+    # Link to specific devices for metadata (preferred approach)
+    target_devices = models.ManyToManyField(
+        Device, 
+        blank=True,
+        help_text="Specific devices this mapping applies to (leave empty to match by metadata)"
+    )
+    
+    # Direct device metadata filters (exact match only) - used when no specific devices are selected
+    vendor = models.CharField(max_length=100, blank=True, help_text="Device vendor (exact match)")
+    model = models.CharField(max_length=100, blank=True, help_text="Device model (exact match)")
+    os_version = models.CharField(max_length=100, blank=True, help_text="OS version (exact match)")
+    device_type = models.CharField(max_length=20, blank=True, help_text="Device type (exact match)")
+    
+    # Workflow type and playbook mapping
+    workflow_type = models.CharField(max_length=50, help_text="Type of workflow (e.g., 'reboot', 'vlan_add', 'backup')")
+    playbook = models.ForeignKey(AnsiblePlaybook, on_delete=models.CASCADE, help_text="Ansible playbook to execute")
+    
+    # Mapping configuration
+    priority = models.IntegerField(default=0, help_text="Priority for matching (higher = more specific)")
+    is_active = models.BooleanField(default=True, help_text="Whether this mapping is active")
+    
+    # Additional configuration
+    default_variables = models.TextField(default='{}', blank=True, help_text="JSON object of default variables for this mapping")
+    required_params = models.TextField(default='[]', blank=True, help_text="JSON array of required parameters for this workflow type")
+    
+    created_by = models.ForeignKey(User, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-priority', 'workflow_type']
+        indexes = [
+            models.Index(fields=['workflow_type', 'is_active']),
+            models.Index(fields=['vendor', 'model', 'os_version']),
+            models.Index(fields=['priority', 'is_active']),
+        ]
+    
+    def get_default_variables(self):
+        """Parse JSON default variables"""
+        try:
+            return json.loads(self.default_variables) if self.default_variables else {}
+        except (json.JSONDecodeError, TypeError):
+            return {}
+    
+    def set_default_variables(self, variables):
+        """Store default variables as JSON"""
+        self.default_variables = json.dumps(variables)
+    
+    def get_required_params(self):
+        """Parse JSON required parameters"""
+        try:
+            return json.loads(self.required_params) if self.required_params else []
+        except (json.JSONDecodeError, TypeError):
+            return []
+    
+    def set_required_params(self, params):
+        """Store required parameters as JSON"""
+        self.required_params = json.dumps(params)
+    
+    def get_device_metadata(self):
+        """Get device metadata for this mapping"""
+        return {
+            'vendor': self.vendor or '',
+            'model': self.model or '',
+            'os_version': self.os_version or '',
+            'device_type': self.device_type or ''
+        }
+    
+    def matches_device(self, device):
+        """Check if this mapping matches a device based on its metadata (exact match only)"""
+        if not self.is_active:
+            return False
+        
+        # If specific devices are targeted, check if this device is in the list
+        if self.target_devices.exists():
+            return self.target_devices.filter(id=device.id).exists()
+        
+        # Otherwise, check metadata filters (exact match only)
+        metadata = self.get_device_metadata()
+        
+        # Exact match on all specified fields
+        if metadata['vendor'] and device.vendor != metadata['vendor']:
+            return False
+        if metadata['model'] and device.model != metadata['model']:
+            return False
+        if metadata['os_version'] and device.os_version != metadata['os_version']:
+            return False
+        if metadata['device_type'] and device.device_type != metadata['device_type']:
+            return False
+        return True
+    
+    def __str__(self):
+        device_count = self.target_devices.count()
+        if device_count > 0:
+            return f"{self.name} ({self.workflow_type}) - {device_count} specific devices"
+        else:
+            metadata = self.get_device_metadata()
+            return f"{self.name} ({self.workflow_type}) - {metadata['vendor'] or '*'} {metadata['model'] or '*'} {metadata['os_version'] or '*'}"

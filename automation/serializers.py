@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from .models import (
     Device, Workflow, WorkflowExecution, SystemLog, CommandExecution,
-    WorkflowNode, WorkflowEdge, WorkflowExecutionPath, WorkflowVariable
+    WorkflowNode, WorkflowEdge, WorkflowExecutionPath, WorkflowVariable,
+    DevicePlaybookMapping
 )
 
 
@@ -681,6 +682,122 @@ class PaginatedAnsibleInventorySerializer(serializers.Serializer):
 class PaginatedAnsibleExecutionSerializer(serializers.Serializer):
     """Serializer for paginated Ansible execution responses"""
     executions = None  # Will be set after AnsibleExecutionSerializer is created
+    total = serializers.IntegerField()
+    page = serializers.IntegerField()
+    per_page = serializers.IntegerField()
+    has_next = serializers.BooleanField()
+    has_previous = serializers.BooleanField()
+
+
+# Device Playbook Mapping serializers
+class DevicePlaybookMappingSerializer(serializers.ModelSerializer):
+    """Serializer for DevicePlaybookMapping model"""
+    playbook_name = serializers.CharField(source='playbook.name', read_only=True)
+    target_devices_info = serializers.SerializerMethodField()
+    created_by_username = serializers.CharField(
+        source='created_by.username', read_only=True
+    )
+    default_variables_dict = serializers.SerializerMethodField()
+    required_params_list = serializers.SerializerMethodField()
+    
+    def get_target_devices_info(self, obj):
+        """Get information about target devices"""
+        devices = obj.target_devices.all()
+        return [
+            {
+                'id': device.id,
+                'name': device.name,
+                'hostname': device.hostname,
+                'vendor': device.vendor,
+                'model': device.model,
+                'os_version': device.os_version,
+                'device_type': device.device_type
+            }
+            for device in devices
+        ]
+    
+    def get_default_variables_dict(self, obj):
+        """Get parsed default variables as dict"""
+        return obj.get_default_variables()
+    
+    def get_required_params_list(self, obj):
+        """Get parsed required parameters as list"""
+        return obj.get_required_params()
+    
+    class Meta:
+        model = DevicePlaybookMapping
+        fields = [
+            'id', 'name', 'description', 'target_devices', 'target_devices_info',
+            'vendor', 'model', 'os_version', 'device_type',
+            'workflow_type', 'playbook', 'playbook_name', 'priority', 'is_active',
+            'default_variables', 'required_params', 'created_by', 'created_by_username',
+            'created_at', 'updated_at', 'default_variables_dict', 'required_params_list'
+        ]
+        read_only_fields = [
+            'id', 'playbook_name', 'created_by_username',
+            'created_at', 'updated_at', 'default_variables_dict', 'required_params_list',
+            'target_devices_info'
+        ]
+
+
+class DevicePlaybookMappingCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating DevicePlaybookMapping"""
+    created_by_username = serializers.CharField(
+        source='created_by.username', read_only=True
+    )
+    default_variables_dict = serializers.DictField(
+        required=False, write_only=True
+    )
+    required_params_list = serializers.ListField(
+        child=serializers.CharField(), required=False, write_only=True
+    )
+    
+    def create(self, validated_data):
+        default_variables_dict = validated_data.pop('default_variables_dict', {})
+        required_params_list = validated_data.pop('required_params_list', [])
+        
+        mapping = super().create(validated_data)
+        
+        if default_variables_dict:
+            mapping.set_default_variables(default_variables_dict)
+        if required_params_list:
+            mapping.set_required_params(required_params_list)
+        
+        mapping.save()
+        return mapping
+    
+    class Meta:
+        model = DevicePlaybookMapping
+        fields = [
+            'id', 'name', 'description', 'target_devices',
+            'vendor', 'model', 'os_version', 'device_type',
+            'workflow_type', 'playbook', 'priority', 'is_active',
+            'default_variables_dict', 'required_params_list', 'created_by', 'created_by_username'
+        ]
+        read_only_fields = ['id', 'created_by_username']
+
+
+class GenericAutomationRequestSerializer(serializers.Serializer):
+    """Serializer for generic automation request"""
+    hostname = serializers.CharField(help_text="Device hostname to execute workflow on")
+    workflow = serializers.CharField(help_text="Type of workflow to execute (e.g., 'reboot', 'vlan_add')")
+    params = serializers.DictField(required=False, default=dict, help_text="Workflow-specific parameters")
+
+
+class GenericAutomationResponseSerializer(serializers.Serializer):
+    """Serializer for generic automation response"""
+    execution_id = serializers.UUIDField()
+    task_id = serializers.CharField()
+    message = serializers.CharField()
+    device_info = serializers.DictField()
+    playbook_info = serializers.DictField()
+    workflow_type = serializers.CharField()
+    mapping_used = serializers.CharField()
+
+
+class PaginatedDevicePlaybookMappingSerializer(serializers.Serializer):
+    """Serializer for paginated DevicePlaybookMapping responses"""
+    mappings = DevicePlaybookMappingSerializer(many=True)
     total = serializers.IntegerField()
     page = serializers.IntegerField()
     per_page = serializers.IntegerField()

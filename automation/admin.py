@@ -3,7 +3,7 @@ from .models import (
     Device, Workflow, WorkflowExecution, CommandExecution, SystemLog,
     WebhookConfiguration, WorkflowVariable, WorkflowNode, WorkflowEdge,
     WorkflowExecutionPath, AnsiblePlaybook, AnsibleInventory, AnsibleExecution,
-    AnsibleExecutionHost
+    AnsibleExecutionHost, DevicePlaybookMapping
 )
 
 
@@ -424,3 +424,55 @@ class AnsibleExecutionHostAdmin(admin.ModelAdmin):
         return super().get_queryset(request).select_related(
             'execution__playbook', 'execution__inventory'
         )
+
+
+@admin.register(DevicePlaybookMapping)
+class DevicePlaybookMappingAdmin(admin.ModelAdmin):
+    list_display = [
+        'name', 'workflow_type', 'mapping_type', 'playbook',
+        'priority', 'is_active', 'created_by', 'created_at'
+    ]
+    list_filter = ['workflow_type', 'is_active', 'priority', 'created_at']
+    search_fields = [
+        'name', 'description', 'workflow_type', 'playbook__name',
+        'vendor', 'model', 'os_version'
+    ]
+    readonly_fields = ['id', 'created_at', 'updated_at']
+    filter_horizontal = ['target_devices']  # Better UI for ManyToManyField
+    fieldsets = (
+        ('Mapping Information', {
+            'fields': ('id', 'name', 'description')
+        }),
+        ('Specific Target Devices (Preferred)', {
+            'fields': ('target_devices',),
+            'description': 'Select specific devices this mapping applies to. Leave empty to use metadata filters.'
+        }),
+        ('Device Metadata Filters (Fallback)', {
+            'fields': ('vendor', 'model', 'os_version', 'device_type'),
+            'classes': ('collapse',),
+            'description': 'Used when no specific devices are selected. All specified fields must match exactly.'
+        }),
+        ('Workflow Configuration', {
+            'fields': ('workflow_type', 'playbook', 'priority', 'is_active')
+        }),
+        ('Variables & Parameters', {
+            'fields': ('default_variables', 'required_params'),
+            'classes': ('collapse',)
+        }),
+        ('Metadata', {
+            'fields': ('created_by', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    @admin.display(description='Mapping Type')
+    def mapping_type(self, obj):
+        if obj.target_devices.exists():
+            return 'Specific Devices'
+        else:
+            return 'Metadata Filter'
+    
+    def save_model(self, request, obj, form, change):
+        if not change:
+            obj.created_by = request.user
+        super().save_model(request, obj, form, change)

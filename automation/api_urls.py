@@ -11,6 +11,10 @@ from .api_views import (
     unified_execution_list,
     unified_execution_detail
 )
+from .generic_automation_views import (
+    generic_automation_execute,
+    device_playbook_mappings
+)
 from .api_viewsets import (
     DeviceViewSet, WorkflowViewSet, ExecutionViewSet, LogViewSet
 )
@@ -92,6 +96,11 @@ urlpatterns = [
     path('executions/execute/', execute_workflow_api, name='execute_workflow'),
     path('executions/unified/', unified_execution_list, name='unified_execution_list'),
     path('executions/unified/<uuid:execution_id>/', unified_execution_detail, name='unified_execution_detail'),
+    
+    # Generic automation endpoint for intelligent routing
+    path('automation/generic/', generic_automation_execute, name='generic_automation_execute'),
+    path('automation/mappings/', device_playbook_mappings, name='device_playbook_mappings'),
+    path('automation/mappings/<uuid:mapping_id>/', device_playbook_mappings, name='device_playbook_mapping_detail'),
     
     # Webhook endpoints
     path('webhooks/',
