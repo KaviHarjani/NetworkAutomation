@@ -1,0 +1,65 @@
+---
+- name: Shutdown interface on Cisco Nexus
+  hosts: nexus
+  gather_facts: no
+
+  vars:
+    interface_name: "Ethernet1/10"
+
+  tasks:
+
+  ############################
+  # PRECHECK
+  ############################
+  - name: Precheck | Collect interface information
+    cisco.nxos.nxos_command:
+      commands:
+        - show interface {{ interface_name }} status
+        - show run interface {{ interface_name }}
+    register: precheck_output
+
+  - name: Precheck | Fail if interface does not exist
+    fail:
+      msg: "Interface {{ interface_name }} does not exist"
+    when: precheck_output.stdout[0] is search("Invalid")
+
+  - name: Precheck | Fail if interface is part of port-channel
+    fail:
+      msg: "Interface {{ interface_name }} is part of a port-channel"
+    when: precheck_output.stdout[1] is search("channel-group")
+
+  - name: Precheck | Save running config for rollback
+    set_fact:
+      rollback_config: "{{ precheck_output.stdout[1].split('\n') }}"
+
+  ############################
+  # IMPLEMENTATION
+  ############################
+  - name: Implementation | Shutdown interface
+    cisco.nxos.nxos_interfaces:
+      config:
+        - name: "{{ interface_name }}"
+          enabled: false
+
+  ############################
+  # POSTCHECK
+  ############################
+  - name: Postcheck | Verify interface is shutdown
+    cisco.nxos.nxos_command:
+      commands:
+        - show interface {{ interface_name }} status
+    register: postcheck_output
+
+  - name: Postcheck | Fail if interface is not shutdown
+    fail:
+      msg: "Interface {{ interface_name }} is NOT shutdown"
+    when: postcheck_output.stdout[0] is not search("disabled|administratively down|notconnect")
+
+  ############################
+  # ROLLBACK
+  ############################
+  - block:
+      - name: Rollback | Restore original interface configuration
+        cisco.nxos.nxos_config:
+          lines: "{{ rollback_config }}"
+    when: postcheck_output is failed
