@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from 'react-query';
-import { ArrowLeftIcon, PlayIcon, ClockIcon, CheckCircleIcon, XCircleIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, PlayIcon, ClockIcon, CheckCircleIcon, XCircleIcon, DocumentDuplicateIcon } from '@heroicons/react/24/outline';
 import { executionAPI } from '../services/api';
 import StatusBadge from '../components/StatusBadge';
+import ConfigDiffViewer from '../components/ConfigDiffViewer';
 
 const ExecutionDetail = () => {
   const { id } = useParams();
@@ -43,6 +44,16 @@ const ExecutionDetail = () => {
     if (duration < 3600) return `${Math.floor(duration / 60)}m ${duration % 60}s`;
     return `${Math.floor(duration / 3600)}h ${Math.floor((duration % 3600) / 60)}m`;
   };
+
+  // Active tab state for output/diff/logs
+  const [activeTab, setActiveTab] = useState('output');
+
+  // Check if diff data is available for this execution
+  const hasDiffData = isAnsibleExecution && (
+    executionData?.diff_html || 
+    executionData?.pre_check_snapshot || 
+    executionData?.post_check_snapshot
+  );
 
   if (isLoading) {
     return (
@@ -217,29 +228,101 @@ const ExecutionDetail = () => {
         </div>
       </div>
 
-      {/* Output */}
-      {(executionData.stdout || executionData.output) && (
-        <div className="bg-white rounded-xl shadow-lg p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Output</h2>
-          <div className="bg-gray-50 rounded-lg p-4 overflow-auto max-h-96">
-            <pre className="text-sm text-gray-800 whitespace-pre-wrap">
-              {executionData.stdout || executionData.output || 'No output available'}
-            </pre>
-          </div>
+      {/* Tab Navigation */}
+      <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+        {/* Tab Buttons */}
+        <div className="flex border-b border-gray-200">
+          <button
+            className={`flex-1 px-6 py-4 text-sm font-medium transition-colors duration-200 ${
+              activeTab === 'output'
+                ? 'bg-white text-red-600 border-b-2 border-red-600'
+                : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+            }}`}
+            onClick={() => setActiveTab('output')}
+          >
+            <div className="flex items-center justify-center gap-2">
+              <DocumentDuplicateIcon className="h-5 w-5" />
+              Output
+            </div>
+          </button>
+          {hasDiffData && (
+            <button
+              className={`flex-1 px-6 py-4 text-sm font-medium transition-colors duration-200 ${
+                activeTab === 'diff'
+                  ? 'bg-white text-red-600 border-b-2 border-red-600'
+                  : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+              }}`}
+              onClick={() => setActiveTab('diff')}
+            >
+              <div className="flex items-center justify-center gap-2">
+                <DocumentDuplicateIcon className="h-5 w-5" />
+                Configuration Diff
+              </div>
+            </button>
+          )}
+          <button
+            className={`flex-1 px-6 py-4 text-sm font-medium transition-colors duration-200 ${
+              activeTab === 'logs'
+                ? 'bg-white text-red-600 border-b-2 border-red-600'
+                : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+            }}`}
+            onClick={() => setActiveTab('logs')}
+          >
+            <div className="flex items-center justify-center gap-2">
+              <DocumentDuplicateIcon className="h-5 w-5" />
+              Logs
+            </div>
+          </button>
         </div>
-      )}
 
-      {/* Error Output */}
-      {(executionData.stderr || executionData.error_message) && (
-        <div className="bg-white rounded-xl shadow-lg p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Error Output</h2>
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 overflow-auto max-h-96">
-            <pre className="text-sm text-red-800 whitespace-pre-wrap">
-              {executionData.stderr || executionData.error_message || 'No error output'}
-            </pre>
-          </div>
+        {/* Tab Content */}
+        <div className="p-6">
+          {activeTab === 'output' && (
+            <div>
+              {(executionData.stdout || executionData.output) ? (
+                <div className="bg-gray-50 rounded-lg p-4 overflow-auto max-h-96">
+                  <pre className="text-sm text-gray-800 whitespace-pre-wrap">
+                    {executionData.stdout || executionData.output || 'No output available'}
+                  </pre>
+                </div>
+              ) : (
+                <div className="text-center py-12 text-gray-500">
+                  <DocumentDuplicateIcon className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                  <p>No output available</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'diff' && hasDiffData && (
+            <div>
+              <ConfigDiffViewer
+                preCheckConfig={executionData.pre_check_snapshot}
+                postCheckConfig={executionData.post_check_snapshot}
+                diffHtml={executionData.diff_html}
+                diffStats={executionData.diff_stats}
+              />
+            </div>
+          )}
+
+          {activeTab === 'logs' && (
+            <div>
+              {(executionData.stderr || executionData.error_message) ? (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4 overflow-auto max-h-96">
+                  <pre className="text-sm text-red-800 whitespace-pre-wrap">
+                    {executionData.stderr || executionData.error_message || 'No logs available'}
+                  </pre>
+                </div>
+              ) : (
+                <div className="text-center py-12 text-gray-500">
+                  <DocumentDuplicateIcon className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                  <p>No logs available</p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Ansible-specific details */}
       {isAnsibleExecution && (

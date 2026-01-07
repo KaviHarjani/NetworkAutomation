@@ -977,6 +977,15 @@ def unified_execution_detail(request, execution_id):
         # Try to find as Ansible execution
         try:
             execution = AnsibleExecution.objects.get(id=execution_id)
+            
+            # Parse diff_stats if it's a string
+            diff_stats_data = None
+            if execution.diff_stats:
+                try:
+                    diff_stats_data = json.loads(execution.diff_stats)
+                except (json.JSONDecodeError, TypeError):
+                    diff_stats_data = None
+            
             execution_data = {
                 'id': str(execution.id),
                 'type': 'ansible',
@@ -995,6 +1004,11 @@ def unified_execution_detail(request, execution_id):
                 'stderr': execution.stderr,
                 'extra_vars': execution.extra_vars,
                 'tags': execution.tags,
+                # Configuration diff fields
+                'pre_check_snapshot': execution.pre_check_snapshot,
+                'post_check_snapshot': execution.post_check_snapshot,
+                'diff_html': execution.diff_html,
+                'diff_stats': diff_stats_data,
             }
             
             return create_cors_response(execution_data)

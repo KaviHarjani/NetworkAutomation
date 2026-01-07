@@ -715,6 +715,29 @@ class AnsibleExecution(models.Model):
     stdout = models.TextField(blank=True)
     stderr = models.TextField(blank=True)
     return_code = models.IntegerField(null=True, blank=True)
+    
+    # Configuration diff fields
+    pre_check_snapshot = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Full configuration snapshot before execution"
+    )
+    post_check_snapshot = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Full configuration snapshot after execution"
+    )
+    diff_html = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Pre-computed HTML diff between pre and post check"
+    )
+    diff_stats = models.TextField(
+        blank=True,
+        null=True,
+        help_text="JSON string with statistics about configuration changes"
+    )
+    
     created_by = models.ForeignKey(User, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
     

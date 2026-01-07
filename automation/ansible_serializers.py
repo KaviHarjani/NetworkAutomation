@@ -3,6 +3,7 @@ Ansible-specific serializers
 """
 from rest_framework import serializers
 from .models import AnsiblePlaybook, AnsibleInventory, AnsibleExecution, AnsibleExecutionHost
+import json
 
 
 class AnsiblePlaybookSerializer(serializers.ModelSerializer):
@@ -74,6 +75,7 @@ class AnsibleExecutionSerializer(serializers.ModelSerializer):
     extra_vars_dict = serializers.SerializerMethodField()
     tags_list = serializers.SerializerMethodField()
     skip_tags_list = serializers.SerializerMethodField()
+    diff_stats_dict = serializers.SerializerMethodField()
     
     def get_extra_vars_dict(self, obj):
         """Get parsed extra vars as dict"""
@@ -87,6 +89,15 @@ class AnsibleExecutionSerializer(serializers.ModelSerializer):
         """Get parsed skip tags as list"""
         return obj.get_skip_tags_list()
     
+    def get_diff_stats_dict(self, obj):
+        """Get parsed diff stats as dict"""
+        if obj.diff_stats:
+            try:
+                return json.loads(obj.diff_stats)
+            except (json.JSONDecodeError, TypeError):
+                return None
+        return None
+    
     class Meta:
         model = AnsibleExecution
         fields = [
@@ -94,11 +105,17 @@ class AnsibleExecutionSerializer(serializers.ModelSerializer):
             'status', 'extra_vars', 'tags', 'skip_tags', 'started_at',
             'completed_at', 'execution_time', 'stdout', 'stderr', 'return_code',
             'created_by', 'created_by_username', 'created_at',
-            'extra_vars_dict', 'tags_list', 'skip_tags_list'
+            # Diff fields
+            'pre_check_snapshot', 'post_check_snapshot', 
+            'diff_html', 'diff_stats',
+            # Computed fields
+            'extra_vars_dict', 'tags_list', 'skip_tags_list', 'diff_stats_dict'
         ]
         read_only_fields = [
             'id', 'playbook_name', 'inventory_name', 'created_by_username',
-            'created_at', 'extra_vars_dict', 'tags_list', 'skip_tags_list'
+            'created_at', 'extra_vars_dict', 'tags_list', 'skip_tags_list',
+            'diff_stats_dict', 'pre_check_snapshot', 'post_check_snapshot',
+            'diff_html', 'diff_stats'
         ]
 
 
