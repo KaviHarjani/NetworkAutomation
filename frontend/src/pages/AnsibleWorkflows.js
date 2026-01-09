@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PlusIcon, PlayIcon, DocumentTextIcon, DocumentDuplicateIcon, PencilIcon, TrashIcon, EyeIcon, CodeBracketIcon, BookOpenIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, PlayIcon, DocumentTextIcon, DocumentDuplicateIcon, PencilIcon, TrashIcon, EyeIcon, CodeBracketIcon, BookOpenIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { ansibleAPI } from '../services/api';
 
@@ -13,6 +13,8 @@ const AnsibleWorkflows = () => {
   const [activeTab, setActiveTab] = useState('playbooks');
   const [selectedPlaybookId, setSelectedPlaybookId] = useState(null);
   const [selectedInventoryId, setSelectedInventoryId] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [filesystemPlaybooks, setFilesystemPlaybooks] = useState([]);
 
   // Load data
   useEffect(() => {
@@ -28,6 +30,14 @@ const AnsibleWorkflows = () => {
         setPlaybooks(playbooksRes.data.playbooks || []);
         setInventories(inventoriesRes.data.inventories || []);
         setExecutions(executionsRes.data.executions || []);
+        
+        // Also discover playbooks from filesystem
+        try {
+          const discoveryRes = await ansibleAPI.discoverPlaybooks();
+          setFilesystemPlaybooks(discoveryRes.data.playbooks || []);
+        } catch (discError) {
+          console.warn('Could not discover filesystem playbooks:', discError);
+        }
       } catch (error) {
         toast.error('Failed to load data');
       } finally {
@@ -37,6 +47,26 @@ const AnsibleWorkflows = () => {
 
     loadData();
   }, []);
+
+  const handleImportPlaybooks = async () => {
+    try {
+      setImporting(true);
+      const response = await ansibleAPI.importPlaybooks();
+      toast.success(response.data.message || `Imported ${response.data.imported} playbooks`);
+      
+      // Refresh playbooks list
+      const playbooksRes = await ansibleAPI.getPlaybooks();
+      setPlaybooks(playbooksRes.data.playbooks || []);
+      
+      // Refresh filesystem discovery
+      const discoveryRes = await ansibleAPI.discoverPlaybooks();
+      setFilesystemPlaybooks(discoveryRes.data.playbooks || []);
+    } catch (error) {
+      toast.error('Failed to import playbooks: ' + (error.response?.data?.error || error.message));
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const handleDeletePlaybook = async (playbookId) => {
     try {
@@ -154,14 +184,45 @@ const AnsibleWorkflows = () => {
           <div className="space-y-6">
             <div className="flex justify-between items-center">
               <h2 className="text-2xl font-semibold text-gray-900">Playbooks</h2>
-              <button
-                onClick={() => navigate('/ansible-playbook-create')}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
-              >
-                <PlusIcon className="w-4 h-4 mr-2" />
-                Create Playbook
-              </button>
+              <div className="flex space-x-3">
+                <button
+                  onClick={handleImportPlaybooks}
+                  disabled={importing}
+                  className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                >
+                  <ArrowPathIcon className={`w-4 h-4 mr-2 ${importing ? 'animate-spin' : ''}`} />
+                  {importing ? 'Importing...' : 'Import from Filesystem'}
+                </button>
+                <button
+                  onClick={() => navigate('/ansible-playbook-create')}
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
+                >
+                  <PlusIcon className="w-4 h-4 mr-2" />
+                  Create Playbook
+                </button>
+              </div>
             </div>
+
+            {/* Filesystem Playbooks Info */}
+            {filesystemPlaybooks.length > 0 && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <DocumentTextIcon className="w-5 h-5 text-blue-600" />
+                    <span className="text-blue-800 font-medium">
+                      {filesystemPlaybooks.length} playbook(s) found in filesystem
+                    </span>
+                  </div>
+                  <button
+                    onClick={handleImportPlaybooks}
+                    disabled={importing}
+                    className="text-sm text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                  >
+                    Import All
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Execute Playbook Section */}
             <div className="bg-white rounded-xl shadow-lg p-6">

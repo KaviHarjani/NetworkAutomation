@@ -1,6 +1,8 @@
 """
 Ansible API viewsets for managing playbooks, inventories, and executions
 """
+import os
+import re
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -20,7 +22,15 @@ from .ansible_serializers import (
     PaginatedAnsibleExecutionSerializer
 )
 from .tasks import execute_ansible_playbook_task
-from .ansible_utils import validate_ansible_playbook_content, validate_ansible_inventory_content
+from .ansible_utils import (
+    validate_ansible_playbook_content,
+    validate_ansible_inventory_content,
+    discover_playbooks,
+    auto_discover_and_import_playbooks,
+    scan_playbook_directory,
+    read_playbook_file,
+    get_playbooks_directory
+)
 
 
 def create_cors_response(data, status=200):
@@ -170,6 +180,73 @@ class AnsiblePlaybookViewSet(viewsets.ViewSet):
             return create_cors_response(
                 {'error': str(e)},
                 status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    @action(detail=False, methods=['get'], authentication_classes=[], permission_classes=[AllowAny])
+    def discover(self, request):
+        """Discover playbooks from the filesystem directory"""
+        try:
+            playbook_dir = request.GET.get('directory')
+            discovery = discover_playbooks(playbook_dir)
+            return Response({
+                'success': True,
+                'directory': discovery['directory'],
+                'total_files': discovery['total_files'],
+                'valid_count': discovery['valid_count'],
+                'invalid_count': discovery['invalid_count'],
+                'playbooks': discovery['valid_playbooks'],
+                'invalid_playbooks': discovery['invalid_playbooks']
+            })
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=False, methods=['post'], authentication_classes=[], permission_classes=[AllowAny])
+    def import_playbooks(self, request):
+        """Import discovered playbooks from filesystem to database"""
+        try:
+            playbook_dir = request.data.get('directory')
+            
+            # Get or create system user
+            user, created = User.objects.get_or_create(
+                username='system',
+                defaults={'email': 'system@localhost'}
+            )
+            
+            # Import playbooks
+            result = auto_discover_and_import_playbooks(playbook_dir, user)
+            
+            return Response({
+                'success': True,
+                'message': f'Imported {result["imported"]} playbooks, updated {result["updated"]}',
+                'imported': result['imported'],
+                'updated': result['updated'],
+                'discovered': result['discovered'],
+                'errors': result['errors']
+            })
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=False, methods=['get'], authentication_classes=[], permission_classes=[AllowAny])
+    def directory_info(self, request):
+        """Get information about the playbook directory"""
+        try:
+            playbook_dir = get_playbooks_directory()
+            files = scan_playbook_directory(playbook_dir)
+            return Response({
+                'directory': playbook_dir,
+                'playbook_count': len(files),
+                'playbooks': [os.path.basename(f) for f in files]
+            })
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
 

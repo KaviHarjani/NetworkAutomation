@@ -373,6 +373,16 @@ export const ansibleAPI = {
 
   executePlaybook: (executionData) =>
     api.post('/api/ansible-executions/execute/', executionData),
+
+  // Auto-discovery operations
+  discoverPlaybooks: (directory = null) =>
+    api.get('/api/ansible-playbooks/discover/', { params: { directory } }),
+
+  importPlaybooks: (directory = null) =>
+    api.post('/api/ansible-playbooks/import_playbooks/', { directory }),
+
+  getPlaybookDirectory: () =>
+    api.get('/api/ansible-playbooks/directory_info/'),
 };
 
 export default api;

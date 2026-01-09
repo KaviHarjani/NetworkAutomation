@@ -7,6 +7,8 @@ import subprocess
 import yaml
 import time
 import logging
+import glob
+from pathlib import Path
 from datetime import datetime
 from decouple import config
 from .models import AnsibleExecution
@@ -763,3 +765,225 @@ def execute_ansible_playbook_on_device(
                 'ip_address': device.ip_address if device else 'unknown'
             }
         }
+
+
+# =============================================================================
+# Auto-Discovery Functions for Ansible Playbooks
+# =============================================================================
+
+
+def get_playbooks_directory():
+    """
+    Get the path to the ansible_playbooks directory
+    
+    Returns:
+        str: Path to the playbook directory
+    """
+    # Try to find the playbook directory relative to the project root
+    project_root = Path(__file__).resolve().parent.parent
+    playbook_dir = project_root / 'ansible_playbooks'
+    
+    # Also check current working directory
+    cwd_playbooks = Path.cwd() / 'ansible_playbooks'
+    if cwd_playbooks.exists():
+        return str(cwd_playbooks)
+    
+    return str(playbook_dir)
+
+
+def scan_playbook_directory(playbook_dir=None):
+    """
+    Scan the playbook directory and return a list of playbook files
+    
+    Args:
+        playbook_dir: Optional path to playbook directory (uses default if None)
+    
+    Returns:
+        list: List of playbook file paths
+    """
+    if playbook_dir is None:
+        playbook_dir = get_playbooks_directory()
+    
+    playbook_files = []
+    
+    if os.path.exists(playbook_dir):
+        # Recursively find all .yml and .yaml files
+        for ext in ['*.yml', '*.yaml']:
+            pattern = os.path.join(playbook_dir, '**', ext)
+            playbook_files.extend(glob.glob(pattern, recursive=True))
+    
+    return sorted(playbook_files)
+
+
+def read_playbook_file(file_path):
+    """
+    Read and parse a playbook file
+    
+    Args:
+        file_path: Path to the playbook file
+    
+    Returns:
+        dict: Playbook information including content and metadata
+    """
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # Parse YAML to extract metadata
+        playbook_data = yaml.safe_load(content) if content.strip() else {}
+        
+        if not isinstance(playbook_data, list):
+            playbook_data = [playbook_data] if playbook_data else []
+        
+        # Extract play names and description
+        play_names = []
+        description = ""
+        for play in playbook_data:
+            if isinstance(play, dict):
+                if 'name' in play:
+                    play_names.append(play['name'])
+        
+        if play_names:
+            description = ", ".join(play_names[:3])  # First 3 plays as description
+            if len(play_names) > 3:
+                description += "..."
+        
+        return {
+            'valid': True,
+            'file_path': file_path,
+            'file_name': os.path.basename(file_path),
+            'content': content,
+            'description': description or "Auto-discovered playbook",
+            'play_count': len(playbook_data),
+            'plays': play_names,
+            'error': None
+        }
+    except Exception as e:
+        return {
+            'valid': False,
+            'file_path': file_path,
+            'file_name': os.path.basename(file_path),
+            'content': '',
+            'description': '',
+            'play_count': 0,
+            'plays': [],
+            'error': str(e)
+        }
+
+
+def discover_playbooks(playbook_dir=None):
+    """
+    Discover all playbooks in the playbook directory
+    
+    Args:
+        playbook_dir: Optional path to playbook directory (uses default if None)
+    
+    Returns:
+        dict: Discovery results with valid and invalid playbooks
+    """
+    playbook_files = scan_playbook_directory(playbook_dir)
+    
+    valid_playbooks = []
+    invalid_playbooks = []
+    
+    for file_path in playbook_files:
+        result = read_playbook_file(file_path)
+        if result['valid']:
+            valid_playbooks.append(result)
+        else:
+            invalid_playbooks.append(result)
+    
+    return {
+        'total_files': len(playbook_files),
+        'valid_count': len(valid_playbooks),
+        'invalid_count': len(invalid_playbooks),
+        'valid_playbooks': valid_playbooks,
+        'invalid_playbooks': invalid_playbooks,
+        'directory': playbook_dir or get_playbooks_directory()
+    }
+
+
+def import_playbook_to_database(playbook_info, created_by=None):
+    """
+    Import a discovered playbook into the database
+    
+    Args:
+        playbook_info: Playbook info dict from discover_playbooks
+        created_by: User instance (optional, defaults to system user)
+    
+    Returns:
+        AnsiblePlaybook: The created or updated playbook instance
+    """
+    from .models import AnsiblePlaybook
+    from django.contrib.auth.models import User
+    
+    playbook_name = playbook_info['file_name'].replace('.yml', '').replace('.yaml', '')
+    
+    # Get or create system user if no user provided
+    if created_by is None:
+        created_by, _ = User.objects.get_or_create(
+            username='system',
+            defaults={'email': 'system@localhost'}
+        )
+    
+    # Check if playbook already exists by name
+    playbook, created = AnsiblePlaybook.objects.get_or_create(
+        name=playbook_name,
+        defaults={
+            'description': playbook_info['description'],
+            'playbook_content': playbook_info['content'],
+            'created_by': created_by
+        }
+    )
+    
+    if not created:
+        # Update existing playbook
+        playbook.description = playbook_info['description']
+        playbook.playbook_content = playbook_info['content']
+        playbook.save()
+    
+    return playbook
+
+
+def auto_discover_and_import_playbooks(playbook_dir=None, created_by=None):
+    """
+    Auto-discover playbooks from filesystem and import to database
+    
+    Args:
+        playbook_dir: Optional path to playbook directory (uses default if None)
+        created_by: User instance (optional, defaults to system user)
+    
+    Returns:
+        dict: Import results
+    """
+    from .models import AnsiblePlaybook
+    
+    discovery = discover_playbooks(playbook_dir)
+    
+    imported = []
+    updated = []
+    skipped = []
+    errors = []
+    
+    for playbook_info in discovery['valid_playbooks']:
+        try:
+            playbook = import_playbook_to_database(playbook_info, created_by)
+            # Check if it's new or updated
+            if AnsiblePlaybook.objects.filter(name=playbook.name, created_at__gte=playbook.created_at - __import__('datetime').timedelta(seconds=1)).exists():
+                updated.append(playbook.name)
+            else:
+                imported.append(playbook.name)
+        except Exception as e:
+            errors.append({
+                'playbook': playbook_info['file_name'],
+                'error': str(e)
+            })
+    
+    return {
+        'discovered': discovery['valid_count'],
+        'imported': len(imported),
+        'updated': len(updated),
+        'skipped': len(skipped),
+        'errors': errors,
+        'invalid_playbooks': discovery['invalid_playbooks']
+    }
