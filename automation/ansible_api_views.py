@@ -251,6 +251,74 @@ class AnsiblePlaybookViewSet(viewsets.ViewSet):
                 {'error': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+    
+    @action(detail=True, methods=['get'], authentication_classes=[], permission_classes=[AllowAny])
+    def export(self, request, pk=None):
+        """Export Ansible playbook as a YAML file download"""
+        try:
+            playbook = AnsiblePlaybook.objects.get(id=pk)
+            
+            # Generate YAML content
+            yaml_content = playbook.playbook_content
+            
+            # Create response with file download headers
+            from django.http import HttpResponse
+            response = HttpResponse(yaml_content, content_type='text/yaml')
+            response['Content-Disposition'] = f'attachment; filename="{playbook.name}.yml"'
+            response['Access-Control-Allow-Origin'] = '*'
+            
+            return response
+            
+        except AnsiblePlaybook.DoesNotExist:
+            return Response({'error': 'Playbook not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=False, methods=['get'], authentication_classes=[], permission_classes=[AllowAny])
+    def export_all(self, request):
+        """Export all Ansible playbooks as a ZIP file download"""
+        try:
+            import zipfile
+            from io import BytesIO
+            
+            playbooks = AnsiblePlaybook.objects.all()
+            
+            if not playbooks.exists():
+                return Response({'error': 'No playbooks found'}, status=status.HTTP_404_NOT_FOUND)
+            
+            # Create ZIP file in memory
+            buffer = BytesIO()
+            with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                for playbook in playbooks:
+                    # Add playbook YAML file
+                    playbook_filename = f"{playbook.name}.yml"
+                    zip_file.writestr(playbook_filename, playbook.playbook_content)
+                    
+                    # Add metadata file
+                    metadata = f"""name: {playbook.name}
+description: {playbook.description or 'No description'}
+created_at: {playbook.created_at}
+updated_at: {playbook.updated_at}
+created_by: {playbook.created_by.username if playbook.created_by else 'Unknown'}
+"""
+                    zip_file.writestr(f"{playbook.name}.meta.json", metadata)
+            
+            # Create response with ZIP file download
+            from django.http import HttpResponse
+            response = HttpResponse(buffer.getvalue(), content_type='application/zip')
+            response['Content-Disposition'] = 'attachment; filename="all_playbooks.zip"'
+            response['Access-Control-Allow-Origin'] = '*'
+            
+            return response
+            
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class AnsibleInventoryViewSet(viewsets.ViewSet):

@@ -259,6 +259,12 @@ export const dashboardAPI = {
     api.get('/api/dashboard/device-status/'),
 };
 
+// Health API
+export const healthAPI = {
+  getCeleryHealth: () =>
+    api.get('/api/health/celery/'),
+};
+
 // Logs API
 export const logsAPI = {
   getLogs: (params = {}) =>
@@ -330,6 +336,17 @@ export const ansibleAPI = {
 
   validatePlaybook: (playbookContent) =>
     api.post('/api/ansible-playbooks/validate/', { playbook_content: playbookContent }),
+
+  // Export operations
+  exportPlaybook: (playbookId) =>
+    api.get(`/api/ansible-playbooks/${playbookId}/export/`, {
+      responseType: 'blob',
+    }),
+
+  exportAllPlaybooks: () =>
+    api.get('/api/ansible-playbooks/export_all/', {
+      responseType: 'blob',
+    }),
 
   // Inventory operations
   getInventories: (params = {}) =>

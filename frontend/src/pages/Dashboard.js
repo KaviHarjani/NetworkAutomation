@@ -10,11 +10,14 @@ import {
   CircleStackIcon,
   ArrowRightIcon,
   PlusIcon,
+  ServerIcon,
+  CheckCircleIcon,
+  ExclamationCircleIcon,
 } from '@heroicons/react/24/outline';
 
 import StatCard from '../components/StatCard';
 import StatusBadge from '../components/StatusBadge';
-import { deviceAPI, workflowAPI, executionAPI, ansibleAPI, dashboardAPI } from '../services/api';
+import { deviceAPI, workflowAPI, executionAPI, ansibleAPI, dashboardAPI, healthAPI } from '../services/api';
 import toast from 'react-hot-toast';
 
 const Dashboard = () => {
@@ -51,6 +54,17 @@ const Dashboard = () => {
     'ansible-executions',
     () => ansibleAPI.getExecutions({ per_page: 100 }),
     { refetchOnWindowFocus: false }
+  );
+
+  // Fetch Celery health check
+  const { data: celeryHealthData, isLoading: celeryHealthLoading, error: celeryHealthError } = useQuery(
+    'celery-health',
+    () => healthAPI.getCeleryHealth(),
+    { 
+      refetchOnWindowFocus: false,
+      retry: 1,
+      staleTime: 30000, // Cache for 30 seconds
+    }
   );
 
   // Calculate stats from API data
@@ -130,13 +144,19 @@ const Dashboard = () => {
     ? ((executionStats.completed || 0) / executionStats.total * 100).toFixed(1)
     : 0;
 
-  if (devicesLoading || workflowsLoading || executionsLoading || ansibleExecutionsLoading || unifiedExecutionsLoading) {
+  if (devicesLoading || workflowsLoading || executionsLoading || ansibleExecutionsLoading || unifiedExecutionsLoading || celeryHealthLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600"></div>
       </div>
     );
   }
+
+  // Celery health status
+  const celeryHealthy = celeryHealthData?.data?.status === 'healthy';
+  const celeryWorkers = celeryHealthData?.data?.workers || {};
+  const celeryTasks = celeryHealthData?.data?.tasks || {};
+  const celeryBroker = celeryHealthData?.data?.broker || {};
 
   return (
     <div className="space-y-6">
@@ -175,6 +195,55 @@ const Dashboard = () => {
           icon={ClockIcon}
           color="red"
         />
+        
+        {/* Celery Health Status */}
+        <div className="bg-white rounded-xl shadow-lg p-6">
+          <div className="flex items-center mb-4">
+            <ServerIcon className="h-6 w-6 text-red-600 mr-2" />
+            <h3 className="text-lg font-semibold text-gray-900">
+              Celery Worker Health
+            </h3>
+          </div>
+          
+          <div className="flex items-center mb-4">
+            {celeryHealthy ? (
+              <CheckCircleIcon className="h-8 w-8 text-green-500 mr-2" />
+            ) : (
+              <ExclamationCircleIcon className="h-8 w-8 text-red-500 mr-2" />
+            )}
+            <div>
+              <div className={`text-lg font-bold ${celeryHealthy ? 'text-green-600' : 'text-red-600'}`}>
+                {celeryHealthy ? 'Healthy' : 'Unhealthy'}
+              </div>
+              <div className="text-sm text-gray-500">
+                {celeryHealthError ? 'Connection failed' : celeryHealthData?.data?.celery_configured ? 'Worker responding' : 'Not configured'}
+              </div>
+            </div>
+          </div>
+          
+          {celeryHealthData?.data?.celery_configured && (
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Workers</span>
+                <span className="font-medium">{celeryWorkers.count || 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Active Tasks</span>
+                <span className="font-medium">{celeryTasks.active_tasks_count || 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Scheduled Tasks</span>
+                <span className="font-medium">{celeryTasks.scheduled_tasks_count || 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Broker</span>
+                <span className="font-medium text-xs truncate max-w-24" title={celeryBroker.broker || 'Unknown'}>
+                  {celeryBroker.broker ? celeryBroker.broker.split('://')[0] : 'Unknown'}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Charts Row */}

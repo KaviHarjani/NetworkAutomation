@@ -9,7 +9,8 @@ from .api_views import (
     generate_group_inventory_api,
     execute_workflow_api,
     unified_execution_list,
-    unified_execution_detail
+    unified_execution_detail,
+    celery_health_check
 )
 from .generic_automation_views import (
     generic_automation_execute,
@@ -124,4 +125,7 @@ urlpatterns = [
     
     # Include router URLs - LAST so it doesn't override custom routes
     path('', include(router.urls)),
+    
+    # Celery health check endpoint
+    path('health/celery/', celery_health_check, name='celery_health_check'),
 ]

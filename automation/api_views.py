@@ -4,6 +4,7 @@ from django.views.decorators.http import require_http_methods
 from django.core.paginator import Paginator
 from django.db import models
 import json
+import datetime
 from .models import (
     Device, Workflow, WorkflowExecution,
     SystemLog, WebhookConfiguration, AnsibleExecution, DevicePlaybookMapping
@@ -14,6 +15,7 @@ from .ansible_utils import (
     validate_ansible_playbook_content,
     validate_ansible_inventory_content
 )
+from network_automation.celery import app as celery_app
 
 
 def create_cors_response(data, status=200):
@@ -1505,6 +1507,115 @@ def webhook_delete(request, webhook_id):
         return create_cors_response({'error': 'Webhook configuration not found'}, status=404)
     except Exception as e:
         return create_cors_response({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET", "OPTIONS"])
+def celery_health_check(request):
+    """API endpoint to check Celery worker health"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = JsonResponse({})
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
+
+    try:
+        from network_automation.celery import app as celery_app
+        from celery import Celery
+
+        # Check if Celery is properly configured
+        if not celery_app:
+            return create_cors_response({
+                'status': 'unhealthy',
+                'celery_configured': False,
+                'error': 'Celery app not configured'
+            }, status=503)
+
+        # Try to get active workers and their stats
+        try:
+            inspect = celery_app.control.inspect()
+
+            # Check if workers are responding
+            stats = inspect.stats()
+            ping = inspect.ping()
+            active_queues = inspect.active_queues()
+
+            workers_healthy = ping is not None and len(ping) > 0
+
+            # Count workers
+            worker_count = len(ping) if ping else 0
+
+            # Get task statistics if workers are healthy
+            task_info = {}
+            if workers_healthy:
+                registered_tasks = inspect.registered()
+                active_tasks = inspect.active()
+                scheduled_tasks = inspect.scheduled()
+
+                task_info = {
+                    'registered_tasks_count': sum(
+                        len(tasks) for tasks in (registered_tasks or {}).values()
+                    ) if registered_tasks else 0,
+                    'active_tasks_count': sum(
+                        len(tasks) for tasks in (active_tasks or {}).values()
+                    ) if active_tasks else 0,
+                    'scheduled_tasks_count': sum(
+                        len(tasks) for tasks in (scheduled_tasks or {}).values()
+                    ) if scheduled_tasks else 0
+                }
+
+            # Get broker info
+            broker_info = {}
+            try:
+                app_connection = celery_app.connection()
+                broker_info = {
+                    'broker': str(app_connection.as_uri()) if app_connection else 'Unknown'
+                }
+                app_connection.close()
+            except Exception:
+                broker_info = {'broker': 'Unable to connect'}
+
+            # Build response
+            response_data = {
+                'status': 'healthy' if workers_healthy else 'unhealthy',
+                'celery_configured': True,
+                'workers': {
+                    'count': worker_count,
+                    'responding': workers_healthy
+                },
+                'tasks': task_info,
+                'broker': broker_info,
+                'timestamp': datetime.datetime.utcnow().isoformat()
+            }
+
+            if workers_healthy:
+                return create_cors_response(response_data)
+            else:
+                return create_cors_response(response_data, status=503)
+
+        except Exception as e:
+            return create_cors_response({
+                'status': 'unhealthy',
+                'celery_configured': True,
+                'error': str(e),
+                'timestamp': datetime.datetime.utcnow().isoformat()
+            }, status=503)
+
+    except ImportError as e:
+        return create_cors_response({
+            'status': 'unhealthy',
+            'celery_configured': False,
+            'error': f'Import error: {str(e)}'
+        }, status=503)
+    except Exception as e:
+        return create_cors_response({
+            'status': 'error',
+            'error': str(e)
+        }, status=500)
+
 
 @csrf_exempt
 @require_http_methods(["POST", "OPTIONS"])

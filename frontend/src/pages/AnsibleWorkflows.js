@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PlusIcon, PlayIcon, DocumentTextIcon, DocumentDuplicateIcon, PencilIcon, TrashIcon, EyeIcon, CodeBracketIcon, BookOpenIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, PlayIcon, DocumentTextIcon, DocumentDuplicateIcon, PencilIcon, TrashIcon, EyeIcon, CodeBracketIcon, BookOpenIcon, ArrowPathIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { ansibleAPI } from '../services/api';
 
@@ -14,6 +14,7 @@ const AnsibleWorkflows = () => {
   const [selectedPlaybookId, setSelectedPlaybookId] = useState(null);
   const [selectedInventoryId, setSelectedInventoryId] = useState(null);
   const [importing, setImporting] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [filesystemPlaybooks, setFilesystemPlaybooks] = useState([]);
 
   // Load data
@@ -65,6 +66,30 @@ const AnsibleWorkflows = () => {
       toast.error('Failed to import playbooks: ' + (error.response?.data?.error || error.message));
     } finally {
       setImporting(false);
+    }
+  };
+
+  const handleExportAllPlaybooks = async () => {
+    try {
+      setExporting(true);
+      const response = await ansibleAPI.exportAllPlaybooks();
+      
+      // Create blob link to download
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'all_playbooks.zip');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      
+      toast.success('All playbooks exported successfully');
+    } catch (error) {
+      console.error('Export error:', error);
+      toast.error('Failed to export playbooks');
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -185,6 +210,14 @@ const AnsibleWorkflows = () => {
             <div className="flex justify-between items-center">
               <h2 className="text-2xl font-semibold text-gray-900">Playbooks</h2>
               <div className="flex space-x-3">
+                <button
+                  onClick={handleExportAllPlaybooks}
+                  disabled={exporting || playbooks.length === 0}
+                  className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                >
+                  <ArrowDownTrayIcon className="w-4 h-4 mr-2" />
+                  {exporting ? 'Exporting...' : 'Export All'}
+                </button>
                 <button
                   onClick={handleImportPlaybooks}
                   disabled={importing}
