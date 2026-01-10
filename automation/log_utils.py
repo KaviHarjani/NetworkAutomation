@@ -199,3 +199,51 @@ def log_workflow_execution_error(execution, error_message, user=None, request=No
         details=error_message,
         request=request
     )
+
+
+def generate_config_diff_html(pre_check_output: str, post_check_output: str) -> str:
+    """
+    Generate HTML diff between precheck and postcheck outputs.
+
+    Args:
+        pre_check_output: Pre-configuration check output
+        post_check_output: Post-configuration check output
+
+    Returns:
+        HTML formatted diff string
+    """
+    from .diff_utils import ConfigDiffGenerator
+
+    diff_text = ConfigDiffGenerator.generate_unified_diff(
+        pre_check_output,
+        post_check_output,
+        from_file="pre_check.config",
+        to_file="post_check.config"
+    )
+
+    return ConfigDiffGenerator.generate_html_diff(diff_text)
+
+
+def get_diff_stats(pre_check_output: str, post_check_output: str) -> dict:
+    """
+    Get statistics about configuration changes.
+
+    Args:
+        pre_check_output: Pre-configuration check output
+        post_check_output: Post-configuration check output
+
+    Returns:
+        Dictionary with change statistics
+    """
+    from .diff_utils import ConfigDiffGenerator
+
+    additions, deletions = ConfigDiffGenerator.generate_line_changes(
+        pre_check_output,
+        post_check_output
+    )
+
+    return {
+        'additions': additions,
+        'deletions': deletions,
+        'total_changes': additions + deletions
+    }

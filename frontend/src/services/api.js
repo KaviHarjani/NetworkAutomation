@@ -176,8 +176,30 @@ export const deviceAPI = {
   assignWorkflowToGroup: (workflowId, deviceIds) =>
     api.post('/api/devices/assign-workflow/', { workflow_id: workflowId, device_ids: deviceIds }),
 
+  assignPlaybookToGroup: (playbookId, deviceIds) =>
+    api.post('/api/devices/assign-playbook/', { playbook_id: playbookId, device_ids: deviceIds }),
+
+  generateGroupInventory: (deviceIds, groupName) =>
+    api.post('/api/devices/generate-inventory/', { device_ids: deviceIds, group_name: groupName }),
+
+  getMappings: () =>
+    api.get('/api/automation/mappings/'),
+
+  createMapping: (mappingData) =>
+    api.post('/api/automation/mappings/', mappingData),
+
+  updateMapping: (mappingId, mappingData) =>
+    api.put(`/api/automation/mappings/${mappingId}/`, mappingData),
+
+  deleteMapping: (mappingId) =>
+    api.delete(`/api/automation/mappings/${mappingId}/`),
+
   executeWorkflow: (executionData) =>
     api.post('/api/executions/execute/', executionData),
+
+  // Generic automation endpoint
+  executeGenericAutomation: (automationData) =>
+    api.post('/api/automation/generic/', automationData),
 };
 
 // Workflow API
@@ -200,14 +222,20 @@ export const workflowAPI = {
   getWorkflowExampleApiBody: (workflowId) =>
     api.get(`/api/workflows/${workflowId}/example_api_body/`),
   
-  executeWorkflow: (workflowId, deviceId) =>
-    api.post('/api/workflows/execute/', { workflow_id: workflowId, device_id: deviceId }),
+  executeWorkflow: (executionData) =>
+    api.post('/api/executions/execute/', executionData),
 };
 
 // Execution API
 export const executionAPI = {
   getExecutions: (params = {}) =>
     api.get('/api/executions/', { params }),
+  
+  getUnifiedExecutions: (params = {}) =>
+    api.get('/api/executions/unified/', { params }),
+  
+  getUnifiedExecutionDetail: (executionId) =>
+    api.get(`/api/executions/unified/${executionId}/`),
   
   getExecution: (executionId) =>
     api.get(`/api/executions/${executionId}/`),
@@ -222,13 +250,19 @@ export const dashboardAPI = {
     api.get('/api/dashboard/stats/'),
   
   getRecentExecutions: (limit = 10) =>
-    api.get('/api/executions/', { params: { per_page: limit } }),
+    api.get('/api/executions/unified/', { params: { per_page: limit } }),
   
   getExecutionStats: (days = 30) =>
     api.get('/api/dashboard/execution-stats/', { params: { days } }),
   
   getDeviceStatusCounts: () =>
     api.get('/api/dashboard/device-status/'),
+};
+
+// Health API
+export const healthAPI = {
+  getCeleryHealth: () =>
+    api.get('/api/health/celery/'),
 };
 
 // Logs API
@@ -238,6 +272,26 @@ export const logsAPI = {
   
   getLog: (logId) =>
     api.get(`/api/logs/${logId}/`),
+};
+
+// Unified Logs API
+export const unifiedLogsAPI = {
+  getUnifiedLogs: (params = {}) =>
+    api.get('/api/unified-logs/', { params }),
+  
+  getLogTypes: () =>
+    api.get('/api/unified-logs/log-types/'),
+  
+  getDevices: () =>
+    api.get('/api/unified-logs/devices/'),
+  
+  getExecutionLogs: (executionId, executionType) =>
+    api.get('/api/unified-logs/execution_logs/', { 
+      params: { execution_id: executionId, execution_type: executionType } 
+    }),
+  
+  getExecutions: (params = {}) =>
+    api.get('/api/unified-logs/executions/', { params }),
 };
 
 
@@ -283,15 +337,40 @@ export const ansibleAPI = {
   validatePlaybook: (playbookContent) =>
     api.post('/api/ansible-playbooks/validate/', { playbook_content: playbookContent }),
 
+  // Export operations
+  exportPlaybook: (playbookId) =>
+    api.get(`/api/ansible-playbooks/${playbookId}/export/`, {
+      responseType: 'blob',
+    }),
+
+  exportAllPlaybooks: () =>
+    api.get('/api/ansible-playbooks/export_all/', {
+      responseType: 'blob',
+    }),
+
   // Inventory operations
   getInventories: (params = {}) =>
     api.get('/api/ansible-inventories/', { params }),
 
   createInventory: (inventoryData) =>
-    api.post('/api/ansible-inventories/', inventoryData),
+    api.post('/api/ansible-inventories/', {
+      name: inventoryData.name,
+      description: inventoryData.description,
+      inventory_type: inventoryData.inventory_type,
+      inventory_content: inventoryData.inventory_content,
+      group_variables_dict: inventoryData.group_variables_dict || {},
+      host_variables_dict: inventoryData.host_variables_dict || {}
+    }),
 
   updateInventory: (inventoryId, inventoryData) =>
-    api.put(`/api/ansible-inventories/${inventoryId}/`, inventoryData),
+    api.put(`/api/ansible-inventories/${inventoryId}/`, {
+      name: inventoryData.name,
+      description: inventoryData.description,
+      inventory_type: inventoryData.inventory_type,
+      inventory_content: inventoryData.inventory_content,
+      group_variables_dict: inventoryData.group_variables_dict || {},
+      host_variables_dict: inventoryData.host_variables_dict || {}
+    }),
 
   deleteInventory: (inventoryId) =>
     api.delete(`/api/ansible-inventories/${inventoryId}/`),
@@ -311,6 +390,16 @@ export const ansibleAPI = {
 
   executePlaybook: (executionData) =>
     api.post('/api/ansible-executions/execute/', executionData),
+
+  // Auto-discovery operations
+  discoverPlaybooks: (directory = null) =>
+    api.get('/api/ansible-playbooks/discover/', { params: { directory } }),
+
+  importPlaybooks: (directory = null) =>
+    api.post('/api/ansible-playbooks/import_playbooks/', { directory }),
+
+  getPlaybookDirectory: () =>
+    api.get('/api/ansible-playbooks/directory_info/'),
 };
 
 export default api;

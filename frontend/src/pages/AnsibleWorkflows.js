@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PlusIcon, PlayIcon, DocumentTextIcon, DocumentDuplicateIcon, PencilIcon, TrashIcon, EyeIcon, CodeBracketIcon, BookOpenIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, PlayIcon, DocumentTextIcon, DocumentDuplicateIcon, PencilIcon, TrashIcon, EyeIcon, CodeBracketIcon, BookOpenIcon, ArrowPathIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { ansibleAPI } from '../services/api';
 
@@ -11,6 +11,11 @@ const AnsibleWorkflows = () => {
   const [executions, setExecutions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('playbooks');
+  const [selectedPlaybookId, setSelectedPlaybookId] = useState(null);
+  const [selectedInventoryId, setSelectedInventoryId] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [filesystemPlaybooks, setFilesystemPlaybooks] = useState([]);
 
   // Load data
   useEffect(() => {
@@ -26,6 +31,14 @@ const AnsibleWorkflows = () => {
         setPlaybooks(playbooksRes.data.playbooks || []);
         setInventories(inventoriesRes.data.inventories || []);
         setExecutions(executionsRes.data.executions || []);
+        
+        // Also discover playbooks from filesystem
+        try {
+          const discoveryRes = await ansibleAPI.discoverPlaybooks();
+          setFilesystemPlaybooks(discoveryRes.data.playbooks || []);
+        } catch (discError) {
+          console.warn('Could not discover filesystem playbooks:', discError);
+        }
       } catch (error) {
         toast.error('Failed to load data');
       } finally {
@@ -35,6 +48,50 @@ const AnsibleWorkflows = () => {
 
     loadData();
   }, []);
+
+  const handleImportPlaybooks = async () => {
+    try {
+      setImporting(true);
+      const response = await ansibleAPI.importPlaybooks();
+      toast.success(response.data.message || `Imported ${response.data.imported} playbooks`);
+      
+      // Refresh playbooks list
+      const playbooksRes = await ansibleAPI.getPlaybooks();
+      setPlaybooks(playbooksRes.data.playbooks || []);
+      
+      // Refresh filesystem discovery
+      const discoveryRes = await ansibleAPI.discoverPlaybooks();
+      setFilesystemPlaybooks(discoveryRes.data.playbooks || []);
+    } catch (error) {
+      toast.error('Failed to import playbooks: ' + (error.response?.data?.error || error.message));
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleExportAllPlaybooks = async () => {
+    try {
+      setExporting(true);
+      const response = await ansibleAPI.exportAllPlaybooks();
+      
+      // Create blob link to download
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'all_playbooks.zip');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      
+      toast.success('All playbooks exported successfully');
+    } catch (error) {
+      console.error('Export error:', error);
+      toast.error('Failed to export playbooks');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const handleDeletePlaybook = async (playbookId) => {
     try {
@@ -68,6 +125,24 @@ const AnsibleWorkflows = () => {
       setExecutions(executionsRes.data.executions || []);
     } catch (error) {
       toast.error('Failed to execute playbook');
+    }
+  };
+
+  const handleExecuteAnsibleWorkflow = async (playbookId, inventoryId) => {
+    try {
+      // Use the correct API endpoint for executing Ansible playbooks
+      const response = await ansibleAPI.executePlaybook({
+        playbook_id: playbookId,
+        inventory_id: inventoryId
+      });
+      toast.success('Ansible workflow execution started');
+      // Refresh executions
+      const executionsRes = await ansibleAPI.getExecutions();
+      setExecutions(executionsRes.data.executions || []);
+      // Navigate to execution detail page
+      navigate(`/ansible-execution-detail/${response.data.execution_id}`);
+    } catch (error) {
+      toast.error('Failed to execute Ansible workflow: ' + (error.response?.data?.error || error.message));
     }
   };
 
@@ -134,13 +209,99 @@ const AnsibleWorkflows = () => {
           <div className="space-y-6">
             <div className="flex justify-between items-center">
               <h2 className="text-2xl font-semibold text-gray-900">Playbooks</h2>
-              <button
-                onClick={() => navigate('/ansible-playbook-create')}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
-              >
-                <PlusIcon className="w-4 h-4 mr-2" />
-                Create Playbook
-              </button>
+              <div className="flex space-x-3">
+                <button
+                  onClick={handleExportAllPlaybooks}
+                  disabled={exporting || playbooks.length === 0}
+                  className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                >
+                  <ArrowDownTrayIcon className="w-4 h-4 mr-2" />
+                  {exporting ? 'Exporting...' : 'Export All'}
+                </button>
+                <button
+                  onClick={handleImportPlaybooks}
+                  disabled={importing}
+                  className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                >
+                  <ArrowPathIcon className={`w-4 h-4 mr-2 ${importing ? 'animate-spin' : ''}`} />
+                  {importing ? 'Importing...' : 'Import from Filesystem'}
+                </button>
+                <button
+                  onClick={() => navigate('/ansible-playbook-create')}
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
+                >
+                  <PlusIcon className="w-4 h-4 mr-2" />
+                  Create Playbook
+                </button>
+              </div>
+            </div>
+
+            {/* Filesystem Playbooks Info */}
+            {filesystemPlaybooks.length > 0 && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <DocumentTextIcon className="w-5 h-5 text-blue-600" />
+                    <span className="text-blue-800 font-medium">
+                      {filesystemPlaybooks.length} playbook(s) found in filesystem
+                    </span>
+                  </div>
+                  <button
+                    onClick={handleImportPlaybooks}
+                    disabled={importing}
+                    className="text-sm text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                  >
+                    Import All
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Execute Playbook Section */}
+            <div className="bg-white rounded-xl shadow-lg p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Execute Playbook</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Select Playbook</label>
+                  <select
+                    value={selectedPlaybookId || ''}
+                    onChange={(e) => setSelectedPlaybookId(e.target.value || null)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">Choose a playbook...</option>
+                    {playbooks.map((playbook) => (
+                      <option key={playbook.id} value={playbook.id}>{playbook.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Select Inventory</label>
+                  <select
+                    value={selectedInventoryId || ''}
+                    onChange={(e) => setSelectedInventoryId(e.target.value || null)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">Choose an inventory...</option>
+                    {inventories.map((inventory) => (
+                      <option key={inventory.id} value={inventory.id}>{inventory.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="mt-4 flex space-x-3">
+                <button
+                  onClick={() => handleExecuteAnsibleWorkflow(selectedPlaybookId, selectedInventoryId)}
+                  disabled={!selectedPlaybookId || !selectedInventoryId}
+                  className={`inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white ${
+                    selectedPlaybookId && selectedInventoryId
+                      ? 'bg-green-600 hover:bg-green-700'
+                      : 'bg-gray-300 cursor-not-allowed'
+                  }`}
+                >
+                  <PlayIcon className="w-4 h-4 mr-2" />
+                  Execute Workflow
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -210,6 +371,14 @@ const AnsibleWorkflows = () => {
                     >
                       <PencilIcon className="w-4 h-4 mr-2" />
                       Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); handleExecuteAnsibleWorkflow(playbook.id, null); }}
+                      className="inline-flex items-center px-3 py-2 border border-green-300 text-sm leading-4 font-medium rounded-md text-green-700 bg-green-50 hover:bg-green-100 cursor-pointer hover:border-green-400 transition-colors duration-200"
+                    >
+                      <PlayIcon className="w-4 h-4 mr-2" />
+                      Execute
                     </button>
                   </div>
                 </div>

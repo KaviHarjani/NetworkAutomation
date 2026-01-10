@@ -1,0 +1,120 @@
+---
+- name: Shutdown interface on Cisco Nexus with diff capture
+  hosts: nexus
+  gather_facts: no
+
+  vars:
+    interface_name: "Ethernet1/10"
+
+  tasks:
+
+  ############################
+  # PRECHECK - Capture Full Config
+  ############################
+  - name: Precheck | Capture running configuration
+    cisco.nxos.nxos_command:
+      commands:
+        - show running-config
+        - show interface {{ interface_name }} status
+        - show run interface {{ interface_name }}
+    register: precheck_output
+
+  - name: Precheck | Save full config snapshot
+    set_fact:
+      precheck_config_snapshot: |
+        ! === PRE-CHECK CONFIGURATION SNAPSHOT ===
+        ! Device: {{ ansible_host }}
+        ! Time: "{{ ansible_date_time.iso8601 }}"
+        !
+        ! --- Full Running Config ---
+        {{ precheck_output.stdout_lines[0] | join('\n') }}
+        !
+        ! --- Interface Status ---
+        {{ precheck_output.stdout_lines[1] | join('\n') }}
+        !
+        ! --- Interface Config ---
+        {{ precheck_output.stdout_lines[2] | join('\n') }}
+
+  - name: Precheck | Fail if interface does not exist
+    fail:
+      msg: "Interface {{ interface_name }} does not exist"
+    when: precheck_output.stdout[0] is search("Invalid")
+
+  - name: Precheck | Fail if interface is part of port-channel
+    fail:
+      msg: "Interface {{ interface_name }} is part of a port-channel"
+    when: precheck_output.stdout[2] is search("channel-group")
+
+  - name: Precheck | Save interface config for rollback
+    set_fact:
+      rollback_config: "{{ precheck_output.stdout[2].split('\n') }}"
+
+  ############################
+  # IMPLEMENTATION
+  ############################
+  - name: Implementation | Shutdown interface
+    cisco.nxos.nxos_interfaces:
+      config:
+        - name: "{{ interface_name }}"
+          enabled: false
+
+  ############################
+  # POSTCHECK - Capture Full Config
+  ############################
+  - name: Postcheck | Capture running configuration
+    cisco.nxos.nxos_command:
+      commands:
+        - show running-config
+        - show interface {{ interface_name }} status
+    register: postcheck_output
+
+  - name: Postcheck | Save full config snapshot
+    set_fact:
+      postcheck_config_snapshot: |
+        ! === POST-CHECK CONFIGURATION SNAPSHOT ===
+        ! Device: {{ ansible_host }}
+        ! Time: "{{ ansible_date_time.iso8601 }}"
+        !
+        ! --- Full Running Config ---
+        {{ postcheck_output.stdout_lines[0] | join('\n') }}
+        !
+        ! --- Interface Status ---
+        {{ postcheck_output.stdout_lines[1] | join('\n') }}
+
+  - name: Postcheck | Verify interface is shutdown
+    fail:
+      msg: "Interface {{ interface_name }} is NOT shutdown"
+    when: postcheck_output.stdout[1] is not search("disabled|administratively down|notconnect")
+    ignore_errors: yes
+
+  ############################
+  # ROLLBACK
+  ############################
+  - block:
+      - name: Rollback | Restore original interface configuration
+        cisco.nxos.nxos_config:
+          lines: "{{ rollback_config }}"
+    when: postcheck_output is failed
+
+  ############################
+  # REPORTING
+  ############################
+  - name: Report | Show precheck snapshot
+    debug:
+      msg: "{{ precheck_config_snapshot }}"
+
+  - name: Report | Show postcheck snapshot
+    debug:
+      msg: "{{ postcheck_config_snapshot }}"
+
+  - name: Report | Generate diff (using local action)
+    delegate_to: localhost
+    copy:
+      content: |
+        --- pre_check.config
+        +++ post_check.config
+        {{ precheck_config_snapshot | comment('plain') }}
+        --- pre-check snapshot ---
+        +++ post-check snapshot ---
+        {{ postcheck_config_snapshot | comment('plain') }}
+      dest: /tmp/{{ inventory_hostname }}_{{ interface_name }}_diff.txt

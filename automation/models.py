@@ -396,6 +396,9 @@ class WebhookConfiguration(models.Model):
         ('execution_completed', 'Execution Completed'),
         ('execution_failed', 'Execution Failed'),
         ('execution_started', 'Execution Started'),
+        ('ansible_execution_completed', 'Ansible Execution Completed'),
+        ('ansible_execution_failed', 'Ansible Execution Failed'),
+        ('ansible_execution_started', 'Ansible Execution Started'),
         ('all_events', 'All Events'),
     ]
 
@@ -409,7 +412,7 @@ class WebhookConfiguration(models.Model):
     description = models.TextField(blank=True)
     webhook_url = models.URLField(help_text="URL to send webhook notifications")
     events = models.CharField(
-        max_length=20,
+        max_length=100,
         choices=WEBHOOK_EVENTS,
         default='execution_completed',
         help_text="Events that trigger this webhook"
@@ -444,7 +447,10 @@ class WebhookConfiguration(models.Model):
     def get_events_list(self):
         """Get list of events this webhook should trigger on"""
         if self.events == 'all_events':
-            return ['execution_completed', 'execution_failed', 'execution_started']
+            return [
+                'execution_completed', 'execution_failed', 'execution_started',
+                'ansible_execution_completed', 'ansible_execution_failed', 'ansible_execution_started'
+            ]
         return [self.events]
 
 
@@ -653,12 +659,29 @@ class AnsibleInventory(models.Model):
     inventory_content = models.TextField(help_text="YAML/INI content of the inventory or script for dynamic")
     group_variables = models.TextField(default='{}', blank=True, help_text="JSON object of group variables")
     host_variables = models.TextField(default='{}', blank=True, help_text="JSON object of host variables")
+    
+    # Soft delete and temporary inventory tracking
+    is_deleted = models.BooleanField(default=False, help_text="Soft delete flag - hidden from UI")
+    is_temporary = models.BooleanField(default=False, help_text="Temporary inventory created via API execution")
+    parent_execution = models.ForeignKey(
+        'AnsibleExecution', 
+        on_delete=models.CASCADE, 
+        null=True, 
+        blank=True,
+        related_name='temporary_inventories',
+        help_text="Reference to execution that created this temporary inventory"
+    )
+    
     created_by = models.ForeignKey(User, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['-created_at']),
+            models.Index(fields=['is_deleted', 'is_temporary']),
+        ]
     
     def get_group_variables(self):
         """Parse JSON group variables from text field"""
@@ -682,6 +705,16 @@ class AnsibleInventory(models.Model):
         """Store host variables as JSON in text field"""
         self.host_variables = json.dumps(variables)
     
+    def soft_delete(self):
+        """Soft delete this inventory - hides from UI but preserves in database"""
+        self.is_deleted = True
+        self.save(update_fields=['is_deleted', 'updated_at'])
+    
+    def restore(self):
+        """Restore a soft-deleted inventory"""
+        self.is_deleted = False
+        self.save(update_fields=['is_deleted', 'updated_at'])
+    
     def __str__(self):
         return f"{self.name} ({self.inventory_type})"
 
@@ -699,16 +732,60 @@ class AnsibleExecution(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     playbook = models.ForeignKey(AnsiblePlaybook, on_delete=models.CASCADE)
     inventory = models.ForeignKey(AnsibleInventory, on_delete=models.CASCADE)
-    status = models.CharField(max_length=20, choices=EXECUTION_STATUS, default='pending')
-    extra_vars = models.TextField(default='{}', blank=True, help_text="JSON object of extra variables")
-    tags = models.TextField(default='[]', blank=True, help_text="JSON array of tags to run")
-    skip_tags = models.TextField(default='[]', blank=True, help_text="JSON array of tags to skip")
+    status = models.CharField(
+        max_length=20, choices=EXECUTION_STATUS, default='pending'
+    )
+    extra_vars = models.TextField(
+        default='{}', blank=True, 
+        help_text="JSON object of extra variables"
+    )
+    tags = models.TextField(
+        default='[]', blank=True, 
+        help_text="JSON array of tags to run"
+    )
+    skip_tags = models.TextField(
+        default='[]', blank=True, 
+        help_text="JSON array of tags to skip"
+    )
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     execution_time = models.FloatField(null=True, blank=True)
     stdout = models.TextField(blank=True)
     stderr = models.TextField(blank=True)
     return_code = models.IntegerField(null=True, blank=True)
+    
+    # API variables tracking
+    api_request_variables = models.TextField(
+        default='{}', blank=True,
+        help_text="JSON object of variables sent via API request"
+    )
+    workflow_trigger_variables = models.TextField(
+        default='{}', blank=True,
+        help_text="JSON object of variables used to trigger the workflow"
+    )
+    execution_source = models.CharField(
+        max_length=50, blank=True,
+        help_text="Source of execution: 'ui', 'api', 'webhook', 'scheduled'"
+    )
+    
+    # Configuration diff fields
+    pre_check_snapshot = models.TextField(
+        blank=True, null=True,
+        help_text="Full configuration snapshot before execution"
+    )
+    post_check_snapshot = models.TextField(
+        blank=True, null=True,
+        help_text="Full configuration snapshot after execution"
+    )
+    diff_html = models.TextField(
+        blank=True, null=True,
+        help_text="Pre-computed HTML diff between pre and post check"
+    )
+    diff_stats = models.TextField(
+        blank=True, null=True,
+        help_text="JSON string with statistics about configuration changes"
+    )
+    
     created_by = models.ForeignKey(User, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
     
@@ -748,6 +825,28 @@ class AnsibleExecution(models.Model):
         """Store skip tags as JSON in text field"""
         self.skip_tags = json.dumps(tags)
     
+    def get_api_request_variables(self):
+        """Parse JSON API request variables"""
+        try:
+            return json.loads(self.api_request_variables) if self.api_request_variables else {}
+        except (json.JSONDecodeError, TypeError):
+            return {}
+    
+    def set_api_request_variables(self, variables):
+        """Store API request variables as JSON"""
+        self.api_request_variables = json.dumps(variables)
+    
+    def get_workflow_trigger_variables(self):
+        """Parse JSON workflow trigger variables"""
+        try:
+            return json.loads(self.workflow_trigger_variables) if self.workflow_trigger_variables else {}
+        except (json.JSONDecodeError, TypeError):
+            return {}
+    
+    def set_workflow_trigger_variables(self, variables):
+        """Store workflow trigger variables as JSON"""
+        self.workflow_trigger_variables = json.dumps(variables)
+    
     def __str__(self):
         return f"{self.playbook.name} - {self.status}"
 
@@ -785,3 +884,110 @@ class AnsibleExecutionHost(models.Model):
     
     def __str__(self):
         return f"{self.hostname} - {self.status}"
+
+
+class DevicePlaybookMapping(models.Model):
+    """Model for mapping device metadata to Ansible playbooks for intelligent routing"""
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=100, help_text="Human-readable name for this mapping")
+    description = models.TextField(blank=True, help_text="Description of what this mapping does")
+    
+    # Link to specific devices for metadata (preferred approach)
+    target_devices = models.ManyToManyField(
+        Device, 
+        blank=True,
+        help_text="Specific devices this mapping applies to (leave empty to match by metadata)"
+    )
+    
+    # Direct device metadata filters (exact match only) - used when no specific devices are selected
+    vendor = models.CharField(max_length=100, blank=True, help_text="Device vendor (exact match)")
+    model = models.CharField(max_length=100, blank=True, help_text="Device model (exact match)")
+    os_version = models.CharField(max_length=100, blank=True, help_text="OS version (exact match)")
+    device_type = models.CharField(max_length=20, blank=True, help_text="Device type (exact match)")
+    
+    # Workflow type and playbook mapping
+    workflow_type = models.CharField(max_length=50, help_text="Type of workflow (e.g., 'reboot', 'vlan_add', 'backup')")
+    playbook = models.ForeignKey(AnsiblePlaybook, on_delete=models.CASCADE, help_text="Ansible playbook to execute")
+    
+    # Mapping configuration
+    priority = models.IntegerField(default=0, help_text="Priority for matching (higher = more specific)")
+    is_active = models.BooleanField(default=True, help_text="Whether this mapping is active")
+    
+    # Additional configuration
+    default_variables = models.TextField(default='{}', blank=True, help_text="JSON object of default variables for this mapping")
+    required_params = models.TextField(default='[]', blank=True, help_text="JSON array of required parameters for this workflow type")
+    
+    created_by = models.ForeignKey(User, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-priority', 'workflow_type']
+        indexes = [
+            models.Index(fields=['workflow_type', 'is_active']),
+            models.Index(fields=['vendor', 'model', 'os_version']),
+            models.Index(fields=['priority', 'is_active']),
+        ]
+    
+    def get_default_variables(self):
+        """Parse JSON default variables"""
+        try:
+            return json.loads(self.default_variables) if self.default_variables else {}
+        except (json.JSONDecodeError, TypeError):
+            return {}
+    
+    def set_default_variables(self, variables):
+        """Store default variables as JSON"""
+        self.default_variables = json.dumps(variables)
+    
+    def get_required_params(self):
+        """Parse JSON required parameters"""
+        try:
+            return json.loads(self.required_params) if self.required_params else []
+        except (json.JSONDecodeError, TypeError):
+            return []
+    
+    def set_required_params(self, params):
+        """Store required parameters as JSON"""
+        self.required_params = json.dumps(params)
+    
+    def get_device_metadata(self):
+        """Get device metadata for this mapping"""
+        return {
+            'vendor': self.vendor or '',
+            'model': self.model or '',
+            'os_version': self.os_version or '',
+            'device_type': self.device_type or ''
+        }
+    
+    def matches_device(self, device):
+        """Check if this mapping matches a device based on its metadata (exact match only)"""
+        if not self.is_active:
+            return False
+        
+        # If specific devices are targeted, check if this device is in the list
+        if self.target_devices.exists():
+            return self.target_devices.filter(id=device.id).exists()
+        
+        # Otherwise, check metadata filters (exact match only)
+        metadata = self.get_device_metadata()
+        
+        # Exact match on all specified fields
+        if metadata['vendor'] and device.vendor != metadata['vendor']:
+            return False
+        if metadata['model'] and device.model != metadata['model']:
+            return False
+        if metadata['os_version'] and device.os_version != metadata['os_version']:
+            return False
+        if metadata['device_type'] and device.device_type != metadata['device_type']:
+            return False
+        return True
+    
+    def __str__(self):
+        device_count = self.target_devices.count()
+        if device_count > 0:
+            return f"{self.name} ({self.workflow_type}) - {device_count} specific devices"
+        else:
+            metadata = self.get_device_metadata()
+            return f"{self.name} ({self.workflow_type}) - {metadata['vendor'] or '*'} {metadata['model'] or '*'} {metadata['os_version'] or '*'}"

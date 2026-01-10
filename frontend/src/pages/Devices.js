@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from 'react-query';
 import {
@@ -30,16 +30,20 @@ const Devices = () => {
     {
       refetchOnWindowFocus: false,
       keepPreviousData: true,
+      staleTime: 0, // Always consider data stale to force refresh
+      gcTime: 0, // Don't cache results
     }
   );
 
-  const devices = data?.data.devices || [];
+  // Parse API response
+  const devices = data?.data?.devices || [];
+  
   const pagination = {
-    total: data?.data.total || 0,
-    page: data?.data.page || 1,
-    per_page: data?.data.per_page || 10,
-    has_next: data?.data.has_next || false,
-    has_previous: data?.data.has_previous || false,
+    total: data?.data?.total || 0,
+    page: data?.data?.page || 1,
+    per_page: data?.data?.per_page || 10,
+    has_next: data?.data?.has_next || false,
+    has_previous: data?.data?.has_previous || false,
   };
 
   const totalPages = Math.ceil(pagination.total / pagination.per_page);
@@ -47,6 +51,9 @@ const Devices = () => {
   if (error) {
     toast.error('Failed to load devices');
   }
+
+  // Debounce search to avoid too many API calls
+  const [searchTimeout, setSearchTimeout] = useState(null);
 
   const handleSearch = (e) => {
     e.preventDefault();
@@ -57,6 +64,35 @@ const Devices = () => {
   const handlePageChange = (page) => {
     setCurrentPage(page);
   };
+
+  // Reset page to 1 when search term or status filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter]);
+
+  // Force refetch on component mount to get fresh data
+  useEffect(() => {
+    refetch();
+  }, [refetch]);
+
+  // Debounced search when search term or status filter changes
+  useEffect(() => {
+    if (searchTimeout) {
+      clearTimeout(searchTimeout);
+    }
+
+    const timeout = setTimeout(() => {
+      refetch();
+    }, 500); // 500ms debounce delay
+
+    setSearchTimeout(timeout);
+
+    return () => {
+      if (searchTimeout) {
+        clearTimeout(searchTimeout);
+      }
+    };
+  }, [searchTerm, statusFilter, refetch]);
 
   if (isLoading) {
     return (
@@ -102,7 +138,9 @@ const Devices = () => {
           <div className="md:w-48">
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
             >
               <option value="all">All Status</option>

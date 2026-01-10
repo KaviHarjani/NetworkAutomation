@@ -1,0 +1,83 @@
+---
+- name: Activate UNUSED TRUNK port on Cisco Nexus
+  hosts: nexus
+  gather_facts: no
+
+  vars:
+    interface_name: "{{ interface_name }}"
+    trunk_vlans: "{{ trunk_vlans }}"     # safest for unused trunk
+    native_vlan: "{{ native_vlan }}"
+
+  tasks:
+
+  ############################
+  # PRECHECK
+  ############################
+  - name: Precheck | Collect interface info
+    cisco.nxos.nxos_command:
+      commands:
+        - show interface {{ interface_name }} status
+        - show run interface {{ interface_name }}
+        - show interface {{ interface_name }} switchport
+    register: precheck_output
+
+  - name: Precheck | Fail if interface does not exist
+    fail:
+      msg: "Interface {{ interface_name }} does not exist"
+    when: precheck_output.stdout[0] is search("Invalid")
+
+  - name: Precheck | Fail if interface is part of port-channel
+    fail:
+      msg: "Interface {{ interface_name }} is in a port-channel"
+    when: precheck_output.stdout[1] is search("channel-group")
+
+  - name: Precheck | Fail if interface is already connected
+    fail:
+      msg: "Interface {{ interface_name }} is already in use"
+    when: precheck_output.stdout[0] is search("connected")
+
+  - name: Precheck | Save running config for rollback
+    set_fact:
+      rollback_config: "{{ precheck_output.stdout[1].split('\n') }}"
+
+  ############################
+  # IMPLEMENTATION
+  ############################
+  - name: Configure UNUSED TRUNK port and enable
+    cisco.nxos.nxos_interfaces:
+      config:
+        - name: "{{ interface_name }}"
+          enabled: true
+          mode: trunk
+          trunk:
+            allowed_vlans: "{{ trunk_vlans }}"
+            native_vlan: "{{ native_vlan }}"
+
+  ############################
+  # POSTCHECK
+  ############################
+  - name: Postcheck | Verify trunk configuration
+    cisco.nxos.nxos_command:
+      commands:
+        - show interface {{ interface_name }} status
+        - show interface {{ interface_name }} switchport
+    register: postcheck_output
+
+  - name: Postcheck | Fail if interface not UP
+    fail:
+      msg: "Trunk port {{ interface_name }} not UP"
+    when: postcheck_output.stdout[0] is not search("up|notconnect")
+
+  - name: Postcheck | Fail if trunk not configured
+    fail:
+      msg: "Trunk configuration not applied correctly"
+    when: postcheck_output.stdout[1] is not search("Operational Mode: trunk")
+
+  ############################
+  # ROLLBACK
+  ############################
+  - block:
+      - name: Rollback | Restore original interface config
+        cisco.nxos.nxos_config:
+          lines: "{{ rollback_config }}"
+    when: postcheck_output is failed

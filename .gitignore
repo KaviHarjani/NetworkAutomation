@@ -177,3 +177,6 @@ htmlcov/
 *.py,cover
 .hypothesis/
 .pytest_cache/
+
+
+*.sqlite3

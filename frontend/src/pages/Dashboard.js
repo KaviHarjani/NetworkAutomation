@@ -10,11 +10,14 @@ import {
   CircleStackIcon,
   ArrowRightIcon,
   PlusIcon,
+  ServerIcon,
+  CheckCircleIcon,
+  ExclamationCircleIcon,
 } from '@heroicons/react/24/outline';
 
 import StatCard from '../components/StatCard';
 import StatusBadge from '../components/StatusBadge';
-import { deviceAPI, workflowAPI, executionAPI, dashboardAPI } from '../services/api';
+import { deviceAPI, workflowAPI, executionAPI, ansibleAPI, dashboardAPI, healthAPI } from '../services/api';
 import toast from 'react-hot-toast';
 
 const Dashboard = () => {
@@ -22,7 +25,9 @@ const Dashboard = () => {
     totalDevices: 0,
     totalWorkflows: 0,
     totalExecutions: 0,
+    totalAnsibleExecutions: 0,
     runningExecutions: 0,
+    runningAnsibleExecutions: 0,
   });
 
   // Fetch dashboard data
@@ -44,27 +49,69 @@ const Dashboard = () => {
     { refetchOnWindowFocus: false }
   );
 
+  // Fetch Ansible executions
+  const { data: ansibleExecutionsData, isLoading: ansibleExecutionsLoading } = useQuery(
+    'ansible-executions',
+    () => ansibleAPI.getExecutions({ per_page: 100 }),
+    { refetchOnWindowFocus: false }
+  );
+
+  // Fetch Celery health check
+  const { data: celeryHealthData, isLoading: celeryHealthLoading, error: celeryHealthError } = useQuery(
+    'celery-health',
+    () => healthAPI.getCeleryHealth(),
+    { 
+      refetchOnWindowFocus: false,
+      retry: 1,
+      staleTime: 30000, // Cache for 30 seconds
+    }
+  );
+
   // Calculate stats from API data
   useEffect(() => {
-    if (devicesData && workflowsData && executionsData) {
+    if (devicesData && workflowsData && executionsData && ansibleExecutionsData) {
       const totalDevices = devicesData.data.total || 0;
       const totalWorkflows = workflowsData.data.workflows?.length || 0;
       const totalExecutions = executionsData.data.total || 0;
+      const totalAnsibleExecutions = ansibleExecutionsData.data.total || 0;
       const runningExecutions = executionsData.data.executions?.filter(
+        exec => exec.status === 'running'
+      ).length || 0;
+      const runningAnsibleExecutions = ansibleExecutionsData.data.executions?.filter(
         exec => exec.status === 'running'
       ).length || 0;
 
       setStats({
         totalDevices,
         totalWorkflows,
-        totalExecutions,
-        runningExecutions,
+        totalExecutions: totalExecutions + totalAnsibleExecutions, // Combined total
+        totalAnsibleExecutions,
+        runningExecutions: Math.max(runningExecutions, runningAnsibleExecutions), // Use max to avoid double counting
+        runningAnsibleExecutions,
       });
     }
-  }, [devicesData, workflowsData, executionsData]);
+  }, [devicesData, workflowsData, executionsData, ansibleExecutionsData]);
 
-  // Get recent executions
-  const recentExecutions = executionsData?.data.executions?.slice(0, 10) || [];
+  // Fetch unified executions for recent executions
+  const { data: unifiedExecutionsData, isLoading: unifiedExecutionsLoading } = useQuery(
+    'unified-executions',
+    () => executionAPI.getUnifiedExecutions({ per_page: 10 }),
+    { refetchOnWindowFocus: false }
+  );
+
+  // Get recent executions from unified API or fallback to separate APIs
+  const recentExecutions = unifiedExecutionsData?.data?.executions || [
+    ...(executionsData?.data.executions?.slice(0, 5) || []).map(exec => ({
+      ...exec,
+      type: 'workflow'
+    })),
+    ...(ansibleExecutionsData?.data.executions?.slice(0, 5) || []).map(exec => ({
+      ...exec,
+      type: 'ansible',
+      workflow: { name: exec.playbook_name || 'Ansible Playbook' },
+      device: { name: exec.inventory_name || 'Ansible Inventory' }
+    }))
+  ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 10);
 
   // Get device status counts
   const deviceStatusCounts = devicesData?.data.devices?.reduce((acc, device) => {
@@ -72,27 +119,44 @@ const Dashboard = () => {
     return acc;
   }, {}) || {};
 
-  // Calculate execution stats
-  const executionStats = executionsData?.data.executions?.reduce(
+  // Calculate execution stats from all available data
+  const allExecutions = [
+    ...(unifiedExecutionsData?.data?.executions || []),
+    ...(executionsData?.data.executions || []),
+    ...(ansibleExecutionsData?.data.executions || [])
+  ];
+  
+  // Remove duplicates based on id to prevent double counting
+  const uniqueExecutions = allExecutions.filter((execution, index, self) => 
+    index === self.findIndex(e => e.id === execution.id)
+  );
+  
+  const executionStats = uniqueExecutions.reduce(
     (acc, exec) => {
       acc[exec.status] = (acc[exec.status] || 0) + 1;
       acc.total++;
       return acc;
     },
     { total: 0 }
-  ) || { total: 0 };
+  );
 
   const successRate = executionStats.total > 0 
     ? ((executionStats.completed || 0) / executionStats.total * 100).toFixed(1)
     : 0;
 
-  if (devicesLoading || workflowsLoading || executionsLoading) {
+  if (devicesLoading || workflowsLoading || executionsLoading || ansibleExecutionsLoading || unifiedExecutionsLoading || celeryHealthLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600"></div>
       </div>
     );
   }
+
+  // Celery health status
+  const celeryHealthy = celeryHealthData?.data?.status === 'healthy';
+  const celeryWorkers = celeryHealthData?.data?.workers || {};
+  const celeryTasks = celeryHealthData?.data?.tasks || {};
+  const celeryBroker = celeryHealthData?.data?.broker || {};
 
   return (
     <div className="space-y-6">
@@ -120,11 +184,66 @@ const Dashboard = () => {
           color="purple"
         />
         <StatCard
+          title="Ansible Executions"
+          value={stats.totalAnsibleExecutions}
+          icon={PlayIcon}
+          color="indigo"
+        />
+        <StatCard
           title="Running Now"
           value={stats.runningExecutions}
           icon={ClockIcon}
           color="red"
         />
+        
+        {/* Celery Health Status */}
+        <div className="bg-white rounded-xl shadow-lg p-6">
+          <div className="flex items-center mb-4">
+            <ServerIcon className="h-6 w-6 text-red-600 mr-2" />
+            <h3 className="text-lg font-semibold text-gray-900">
+              Celery Worker Health
+            </h3>
+          </div>
+          
+          <div className="flex items-center mb-4">
+            {celeryHealthy ? (
+              <CheckCircleIcon className="h-8 w-8 text-green-500 mr-2" />
+            ) : (
+              <ExclamationCircleIcon className="h-8 w-8 text-red-500 mr-2" />
+            )}
+            <div>
+              <div className={`text-lg font-bold ${celeryHealthy ? 'text-green-600' : 'text-red-600'}`}>
+                {celeryHealthy ? 'Healthy' : 'Unhealthy'}
+              </div>
+              <div className="text-sm text-gray-500">
+                {celeryHealthError ? 'Connection failed' : celeryHealthData?.data?.celery_configured ? 'Worker responding' : 'Not configured'}
+              </div>
+            </div>
+          </div>
+          
+          {celeryHealthData?.data?.celery_configured && (
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Workers</span>
+                <span className="font-medium">{celeryWorkers.count || 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Active Tasks</span>
+                <span className="font-medium">{celeryTasks.active_tasks_count || 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Scheduled Tasks</span>
+                <span className="font-medium">{celeryTasks.scheduled_tasks_count || 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Broker</span>
+                <span className="font-medium text-xs truncate max-w-24" title={celeryBroker.broker || 'Unknown'}>
+                  {celeryBroker.broker ? celeryBroker.broker.split('://')[0] : 'Unknown'}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Charts Row */}
@@ -216,7 +335,7 @@ const Dashboard = () => {
           <div className="flex items-center">
             <ClockIcon className="h-6 w-6 text-red-600 mr-2" />
             <h3 className="text-lg font-semibold text-gray-900">
-              Recent Workflow Executions
+              Recent Executions (Workflow + Ansible)
             </h3>
           </div>
           <Link
@@ -255,14 +374,14 @@ const Dashboard = () => {
                   <tr key={execution.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm font-medium text-gray-900">
-                        {execution.workflow.name}
+                        {execution.workflow?.name || execution.playbook?.name || execution.playbook_name || 'Unknown'}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
                         <DeviceTabletIcon className="h-4 w-4 text-gray-400 mr-2" />
                         <div className="text-sm text-gray-900">
-                          {execution.device.name}
+                          {execution.device?.name || execution.inventory?.name || execution.inventory_name || 'N/A'}
                         </div>
                       </div>
                     </td>

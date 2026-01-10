@@ -237,3 +237,164 @@ class WebhookManager:
 
         except Exception as e:
             return False, f"Test webhook failed: {str(e)}"
+
+    @staticmethod
+    def send_ansible_webhook_notification(ansible_execution, event_type='ansible_execution_completed'):
+        """
+        Send webhook notification for Ansible playbook execution events
+
+        Args:
+            ansible_execution: AnsibleExecution instance
+            event_type: Type of event (ansible_execution_completed, ansible_execution_failed, etc.)
+        """
+        try:
+            # Get all active webhook configurations that should trigger on this event
+            webhook_configs = WebhookConfiguration.objects.filter(is_active=True)
+
+            if not webhook_configs:
+                logger.info("No active webhook configurations found, skipping notification")
+                return False
+
+            # Filter webhooks that should trigger for this event
+            webhooks_to_trigger = []
+            for config in webhook_configs:
+                events = config.get_events_list()
+                if event_type in events or 'all_events' in events:
+                    webhooks_to_trigger.append(config)
+
+            if not webhooks_to_trigger:
+                logger.info(f"No webhook configurations found for event {event_type}, skipping notification")
+                return False
+
+            # Send webhook to all matching configurations
+            success_count = 0
+            for config in webhooks_to_trigger:
+                try:
+                    webhook_success = WebhookManager._send_single_ansible_webhook(config, ansible_execution, event_type)
+                    if webhook_success:
+                        success_count += 1
+                except Exception as e:
+                    logger.error(f"Failed to send ansible webhook for configuration {config.name}: {e}")
+                    continue
+
+            return success_count > 0
+
+        except Exception as e:
+            logger.error(f"Error in ansible webhook notification process: {e}")
+            return False
+
+    @staticmethod
+    def _send_single_ansible_webhook(config, ansible_execution, event_type):
+        """
+        Send a single webhook notification for Ansible execution
+        """
+        try:
+            # Prepare payload
+            payload = WebhookManager._prepare_ansible_payload(ansible_execution, event_type)
+
+            # Send webhook
+            headers = {
+                'Content-Type': 'application/json',
+                'User-Agent': 'NetworkAutomation/Webhook',
+                'X-Event-Type': event_type,
+                'X-Timestamp': timezone.now().isoformat()
+            }
+
+            # Add secret key if configured
+            if config.secret_key:
+                headers['X-Webhook-Secret'] = config.secret_key
+
+            response = requests.post(
+                config.webhook_url,
+                data=json.dumps(payload),
+                headers=headers,
+                timeout=10  # 10 second timeout
+            )
+
+            # Log webhook response
+            logger.info(f"Ansible webhook sent to {config.webhook_url}")
+            logger.info(f"Response status: {response.status_code}")
+            logger.info(f"Response: {response.text}")
+
+            # Log system event
+            SystemLog.objects.create(
+                level='INFO',
+                type='WEBHOOK',
+                message=f"Ansible webhook notification sent for {event_type} to {config.name}",
+                details=json.dumps({
+                    'webhook_config_id': str(config.id),
+                    'ansible_execution_id': str(ansible_execution.id),
+                    'status_code': response.status_code,
+                    'response': response.text[:500]  # Limit response length
+                }),
+                object_type='WebhookConfiguration',
+                object_id=str(config.id)
+            )
+
+            return response.status_code == 200
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Ansible webhook delivery failed for {config.name}: {e}")
+
+            # Log error
+            SystemLog.objects.create(
+                level='ERROR',
+                type='WEBHOOK',
+                message=f"Ansible webhook delivery failed for {config.name}: {str(e)}",
+                details=json.dumps({
+                    'webhook_config_id': str(config.id),
+                    'ansible_execution_id': str(ansible_execution.id),
+                    'error': str(e)
+                }),
+                object_type='WebhookConfiguration',
+                object_id=str(config.id)
+            )
+
+            return False
+        except Exception as e:
+            logger.error(f"Ansible webhook error for {config.name}: {e}")
+            return False
+
+    @staticmethod
+    def _prepare_ansible_payload(ansible_execution, event_type):
+        """
+        Prepare webhook payload with Ansible execution details
+        """
+        playbook = ansible_execution.playbook
+        inventory = ansible_execution.inventory
+
+        # Build payload
+        payload = {
+            'event_id': str(ansible_execution.id),
+            'event_type': event_type,
+            'timestamp': timezone.now().isoformat(),
+            'execution_type': 'ansible_playbook',
+            'playbook': {
+                'id': str(playbook.id),
+                'name': playbook.name,
+                'description': playbook.description,
+                'tags': playbook.get_tags()
+            },
+            'inventory': {
+                'id': str(inventory.id),
+                'name': inventory.name,
+                'type': inventory.inventory_type
+            },
+            'execution': {
+                'id': str(ansible_execution.id),
+                'status': ansible_execution.status,
+                'started_at': ansible_execution.started_at.isoformat() if ansible_execution.started_at else None,
+                'completed_at': ansible_execution.completed_at.isoformat() if ansible_execution.completed_at else None,
+                'execution_time': ansible_execution.execution_time,
+                'return_code': ansible_execution.return_code
+            },
+            'variables': ansible_execution.get_extra_vars(),
+            'tags': ansible_execution.get_tags_list(),
+            'skip_tags': ansible_execution.get_skip_tags_list(),
+            'results': {
+                'stdout': ansible_execution.stdout,
+                'stderr': ansible_execution.stderr
+            }
+        }
+
+        return payload

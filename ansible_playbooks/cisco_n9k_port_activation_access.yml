@@ -1,0 +1,76 @@
+---
+- name: Activate ACCESS port on Cisco Nexus
+  hosts: nexus
+  gather_facts: no
+
+  vars:
+    interface_name: "{{ interface_name | default('Ethernet1/10') }}"
+    access_vlan: "{{ access_vlan | default(20) }}"
+
+  tasks:
+
+  ############################
+  # PRECHECK
+  ############################
+  - name: Precheck | Get interface status
+    cisco.nxos.nxos_command:
+      commands:
+        - show interface {{ interface_name }} status
+        - show run interface {{ interface_name }}
+        - show interface {{ interface_name }} switchport
+    register: precheck_output
+
+  - name: Precheck | Fail if interface does not exist
+    fail:
+      msg: "Interface {{ interface_name }} does not exist"
+    when: precheck_output.stdout[0] is search("Invalid")
+
+  - name: Precheck | Fail if interface is part of port-channel
+    fail:
+      msg: "Interface {{ interface_name }} is part of a port-channel"
+    when: precheck_output.stdout[1] is search("channel-group")
+
+  - name: Precheck | Save running config for rollback
+    set_fact:
+      rollback_config: "{{ precheck_output.stdout[1].split('\n') }}"
+
+  ############################
+  # IMPLEMENTATION
+  ############################
+  - name: Configure ACCESS port and enable
+    cisco.nxos.nxos_interfaces:
+      config:
+        - name: "{{ interface_name }}"
+          enabled: true
+          mode: access
+          access:
+            vlan: "{{ access_vlan }}"
+
+  ############################
+  # POSTCHECK
+  ############################
+  - name: Postcheck | Verify interface state
+    cisco.nxos.nxos_command:
+      commands:
+        - show interface {{ interface_name }} status
+        - show interface {{ interface_name }} switchport
+    register: postcheck_output
+
+  - name: Postcheck | Fail if interface not up
+    fail:
+      msg: "Interface {{ interface_name }} is not UP"
+    when: postcheck_output.stdout[0] is not search("connected|up")
+
+  - name: Postcheck | Fail if VLAN mismatch
+    fail:
+      msg: "Access VLAN not correctly applied"
+    when: postcheck_output.stdout[1] is not search("Access Mode VLAN: {{ access_vlan }}")
+
+  ############################
+  # ROLLBACK
+  ############################
+  - block:
+      - name: Rollback | Restore original interface config
+        cisco.nxos.nxos_config:
+          lines: "{{ rollback_config }}"
+    when: postcheck_output is failed

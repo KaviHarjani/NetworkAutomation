@@ -15,6 +15,7 @@ import {
 } from '@heroicons/react/24/outline';
 
 import toast from 'react-hot-toast';
+import { unifiedLogsAPI } from '../services/api';
 
 const UnifiedLogs = () => {
   const [filters, setFilters] = useState({
@@ -41,26 +42,15 @@ const UnifiedLogs = () => {
   const { data: devicesData } = useQuery('devices', fetchDevices);
 
   const fetchUnifiedLogs = async (params) => {
-    const queryParams = new URLSearchParams();
-    Object.entries(params).forEach(([key, value]) => {
-      if (value) queryParams.append(key, value);
-    });
-
-    const response = await fetch(`/api/unified-logs/?${queryParams}`);
-    if (!response.ok) throw new Error('Failed to fetch logs');
-    return response.json();
+    return unifiedLogsAPI.getUnifiedLogs(params).then(response => response.data);
   };
 
   const fetchLogTypes = async () => {
-    const response = await fetch('/api/unified-logs/log-types/');
-    if (!response.ok) throw new Error('Failed to fetch log types');
-    return response.json();
+    return unifiedLogsAPI.getLogTypes().then(response => response.data);
   };
 
   const fetchDevices = async () => {
-    const response = await fetch('/api/unified-logs/devices/');
-    if (!response.ok) throw new Error('Failed to fetch devices');
-    return response.json();
+    return unifiedLogsAPI.getDevices().then(response => response.data);
   };
 
   const handleFilterChange = (key, value) => {
@@ -445,9 +435,7 @@ const LogDetailModal = ({ log, onClose }) => {
   );
 
   const fetchExecutionDetails = async (executionId, executionType) => {
-    const response = await fetch(`/api/unified-logs/execution_logs/?execution_id=${executionId}&execution_type=${executionType}`);
-    if (!response.ok) throw new Error('Failed to fetch execution details');
-    return response.json();
+    return unifiedLogsAPI.getExecutionLogs(executionId, executionType).then(response => response.data);
   };
 
   const formatDate = (dateString) => {
