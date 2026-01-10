@@ -659,12 +659,29 @@ class AnsibleInventory(models.Model):
     inventory_content = models.TextField(help_text="YAML/INI content of the inventory or script for dynamic")
     group_variables = models.TextField(default='{}', blank=True, help_text="JSON object of group variables")
     host_variables = models.TextField(default='{}', blank=True, help_text="JSON object of host variables")
+    
+    # Soft delete and temporary inventory tracking
+    is_deleted = models.BooleanField(default=False, help_text="Soft delete flag - hidden from UI")
+    is_temporary = models.BooleanField(default=False, help_text="Temporary inventory created via API execution")
+    parent_execution = models.ForeignKey(
+        'AnsibleExecution', 
+        on_delete=models.CASCADE, 
+        null=True, 
+        blank=True,
+        related_name='temporary_inventories',
+        help_text="Reference to execution that created this temporary inventory"
+    )
+    
     created_by = models.ForeignKey(User, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['-created_at']),
+            models.Index(fields=['is_deleted', 'is_temporary']),
+        ]
     
     def get_group_variables(self):
         """Parse JSON group variables from text field"""
@@ -688,6 +705,16 @@ class AnsibleInventory(models.Model):
         """Store host variables as JSON in text field"""
         self.host_variables = json.dumps(variables)
     
+    def soft_delete(self):
+        """Soft delete this inventory - hides from UI but preserves in database"""
+        self.is_deleted = True
+        self.save(update_fields=['is_deleted', 'updated_at'])
+    
+    def restore(self):
+        """Restore a soft-deleted inventory"""
+        self.is_deleted = False
+        self.save(update_fields=['is_deleted', 'updated_at'])
+    
     def __str__(self):
         return f"{self.name} ({self.inventory_type})"
 
@@ -705,10 +732,21 @@ class AnsibleExecution(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     playbook = models.ForeignKey(AnsiblePlaybook, on_delete=models.CASCADE)
     inventory = models.ForeignKey(AnsibleInventory, on_delete=models.CASCADE)
-    status = models.CharField(max_length=20, choices=EXECUTION_STATUS, default='pending')
-    extra_vars = models.TextField(default='{}', blank=True, help_text="JSON object of extra variables")
-    tags = models.TextField(default='[]', blank=True, help_text="JSON array of tags to run")
-    skip_tags = models.TextField(default='[]', blank=True, help_text="JSON array of tags to skip")
+    status = models.CharField(
+        max_length=20, choices=EXECUTION_STATUS, default='pending'
+    )
+    extra_vars = models.TextField(
+        default='{}', blank=True, 
+        help_text="JSON object of extra variables"
+    )
+    tags = models.TextField(
+        default='[]', blank=True, 
+        help_text="JSON array of tags to run"
+    )
+    skip_tags = models.TextField(
+        default='[]', blank=True, 
+        help_text="JSON array of tags to skip"
+    )
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     execution_time = models.FloatField(null=True, blank=True)
@@ -716,25 +754,35 @@ class AnsibleExecution(models.Model):
     stderr = models.TextField(blank=True)
     return_code = models.IntegerField(null=True, blank=True)
     
+    # API variables tracking
+    api_request_variables = models.TextField(
+        default='{}', blank=True,
+        help_text="JSON object of variables sent via API request"
+    )
+    workflow_trigger_variables = models.TextField(
+        default='{}', blank=True,
+        help_text="JSON object of variables used to trigger the workflow"
+    )
+    execution_source = models.CharField(
+        max_length=50, blank=True,
+        help_text="Source of execution: 'ui', 'api', 'webhook', 'scheduled'"
+    )
+    
     # Configuration diff fields
     pre_check_snapshot = models.TextField(
-        blank=True,
-        null=True,
+        blank=True, null=True,
         help_text="Full configuration snapshot before execution"
     )
     post_check_snapshot = models.TextField(
-        blank=True,
-        null=True,
+        blank=True, null=True,
         help_text="Full configuration snapshot after execution"
     )
     diff_html = models.TextField(
-        blank=True,
-        null=True,
+        blank=True, null=True,
         help_text="Pre-computed HTML diff between pre and post check"
     )
     diff_stats = models.TextField(
-        blank=True,
-        null=True,
+        blank=True, null=True,
         help_text="JSON string with statistics about configuration changes"
     )
     
@@ -776,6 +824,28 @@ class AnsibleExecution(models.Model):
     def set_skip_tags_list(self, tags):
         """Store skip tags as JSON in text field"""
         self.skip_tags = json.dumps(tags)
+    
+    def get_api_request_variables(self):
+        """Parse JSON API request variables"""
+        try:
+            return json.loads(self.api_request_variables) if self.api_request_variables else {}
+        except (json.JSONDecodeError, TypeError):
+            return {}
+    
+    def set_api_request_variables(self, variables):
+        """Store API request variables as JSON"""
+        self.api_request_variables = json.dumps(variables)
+    
+    def get_workflow_trigger_variables(self):
+        """Parse JSON workflow trigger variables"""
+        try:
+            return json.loads(self.workflow_trigger_variables) if self.workflow_trigger_variables else {}
+        except (json.JSONDecodeError, TypeError):
+            return {}
+    
+    def set_workflow_trigger_variables(self, variables):
+        """Store workflow trigger variables as JSON"""
+        self.workflow_trigger_variables = json.dumps(variables)
     
     def __str__(self):
         return f"{self.playbook.name} - {self.status}"

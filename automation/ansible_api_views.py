@@ -3,23 +3,25 @@ Ansible API viewsets for managing playbooks, inventories, and executions
 """
 import os
 import re
+import json
+import uuid
+import logging
+from datetime import datetime
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 from django.core.paginator import Paginator
 from django.contrib.auth.models import User
-from django.views.decorators.csrf import csrf_exempt
-from django.utils.decorators import method_decorator
 from django.http import JsonResponse
-from .models import AnsiblePlaybook, AnsibleInventory, AnsibleExecution
+from .models import (
+    AnsiblePlaybook, AnsibleInventory, AnsibleExecution, 
+    SystemLog
+)
 from .ansible_serializers import (
     AnsiblePlaybookSerializer, AnsiblePlaybookCreateSerializer,
     AnsibleInventorySerializer, AnsibleInventoryCreateSerializer,
     AnsibleExecutionSerializer, AnsibleExecutionCreateSerializer,
-    AnsibleExecutionResponseSerializer,
-    PaginatedAnsiblePlaybookSerializer, PaginatedAnsibleInventorySerializer,
-    PaginatedAnsibleExecutionSerializer
 )
 from .tasks import execute_ansible_playbook_task
 from .ansible_utils import (
@@ -28,9 +30,10 @@ from .ansible_utils import (
     discover_playbooks,
     auto_discover_and_import_playbooks,
     scan_playbook_directory,
-    read_playbook_file,
     get_playbooks_directory
 )
+
+logger = logging.getLogger(__name__)
 
 
 def create_cors_response(data, status=200):
@@ -257,9 +260,13 @@ class AnsibleInventoryViewSet(viewsets.ViewSet):
     permission_classes = [AllowAny]
     
     def list(self, request):
-        """List all Ansible inventories with pagination"""
+        """List all Ansible inventories with pagination - excludes soft-deleted and temporary"""
         try:
-            inventories = AnsibleInventory.objects.all()
+            # Only show non-deleted and non-temporary inventories
+            inventories = AnsibleInventory.objects.filter(
+                is_deleted=False,
+                is_temporary=False
+            )
             
             # Search filter
             search = request.GET.get('search')
@@ -269,6 +276,11 @@ class AnsibleInventoryViewSet(viewsets.ViewSet):
                 ) | inventories.filter(
                     description__icontains=search
                 )
+            
+            # Filter by type
+            inv_type = request.GET.get('type')
+            if inv_type:
+                inventories = inventories.filter(inventory_type=inv_type)
             
             # Pagination
             page = int(request.GET.get('page', 1))
@@ -288,7 +300,10 @@ class AnsibleInventoryViewSet(viewsets.ViewSet):
             })
             
         except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {'error': str(e)}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
     def create(self, request):
         """Create a new Ansible inventory"""
@@ -428,44 +443,166 @@ class AnsibleExecutionViewSet(viewsets.ViewSet):
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     def retrieve(self, request, execution_id=None):
-        """Get Ansible execution details"""
+        """Get Ansible execution details with tracked variables"""
         try:
             execution = AnsibleExecution.objects.get(id=execution_id)
-            serializer = AnsibleExecutionSerializer(execution)
-            return Response(serializer.data)
+            
+            # Build detailed response
+            response_data = {
+                'id': str(execution.id),
+                'playbook': {
+                    'id': str(execution.playbook.id),
+                    'name': execution.playbook.name,
+                },
+                'inventory': {
+                    'id': str(execution.inventory.id),
+                    'name': execution.inventory.name,
+                    'is_temporary': execution.inventory.is_temporary,
+                },
+                'status': execution.status,
+                'extra_vars': execution.get_extra_vars(),
+                'tags': execution.get_tags_list(),
+                'skip_tags': execution.get_skip_tags_list(),
+                'started_at': execution.started_at,
+                'completed_at': execution.completed_at,
+                'execution_time': execution.execution_time,
+                'return_code': execution.return_code,
+                'stdout': execution.stdout[:1000] + '...' if len(execution.stdout) > 1000 else execution.stdout,
+                'stderr': execution.stderr[:500] + '...' if len(execution.stderr) > 500 else execution.stderr,
+                'created_at': execution.created_at,
+                
+                # Tracked API variables
+                'api_request_variables': execution.get_api_request_variables(),
+                'workflow_trigger_variables': execution.get_workflow_trigger_variables(),
+                'execution_source': execution.execution_source,
+                
+                # Diff data if available
+                'diff_stats': json.loads(execution.diff_stats) if execution.diff_stats else None,
+            }
+            
+            return Response(response_data)
             
         except AnsibleExecution.DoesNotExist:
-            return Response({'error': 'Execution not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {'error': 'Execution not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
         except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {'error': str(e)}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
     @action(detail=False, methods=['post'])
     def execute(self, request):
-        """Execute an Ansible playbook"""
+        """
+        Execute an Ansible playbook with temporary inventory support.
+        
+        Features:
+        - Creates temporary inventories from API content (soft-deleted after use)
+        - Tracks all API request variables
+        - Tracks workflow trigger variables
+        - Logs execution details
+        """
         try:
+            # Validate input
             serializer = AnsibleExecutionCreateSerializer(data=request.data)
             if not serializer.is_valid():
-                return Response({'error': str(serializer.errors)}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    {'error': str(serializer.errors)}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             
             data = serializer.validated_data
-            playbook_id = data['playbook_id']
-            inventory_id = data['inventory_id']
             
-            playbook = AnsiblePlaybook.objects.get(id=playbook_id)
-            inventory = AnsibleInventory.objects.get(id=inventory_id)
-            
+            # Get or create API user
             user, created = User.objects.get_or_create(
                 username='api_user', 
                 defaults={'email': 'api@example.com'}
             )
+            
+            # Extract API request variables for logging
+            api_request_vars = {
+                'playbook_id': str(data.get('playbook_id')),
+                'inventory_id': str(data.get('inventory_id')),
+                'extra_vars_keys': list(data.get('extra_vars_dict', {}).keys()) if data.get('extra_vars_dict') else [],
+                'tags': data.get('tags_list', []),
+                'skip_tags': data.get('skip_tags_list', []),
+                'timestamp': datetime.now().isoformat(),
+                'source_ip': request.META.get('REMOTE_ADDR', 'unknown'),
+                'user_agent': (request.META.get('HTTP_USER_AGENT', '') or '')[:200],
+            }
+            
+            # Extract workflow trigger variables
+            workflow_trigger_vars = data.get('extra_vars_dict', {})
+            
+            # Check if inventory content is provided directly
+            inventory_content = request.data.get('inventory_content')
+            inventory_id = data.get('inventory_id')
+            
+            temp_inventory = None
+            
+            if inventory_content and not inventory_id:
+                # Create temporary inventory from content
+                temp_name = f"temp_inventory_{uuid.uuid4().hex[:8]}"
+                temp_inventory = AnsibleInventory.objects.create(
+                    name=temp_name,
+                    description=f"Temporary inventory created by API at {datetime.now().isoformat()}",
+                    inventory_type='static',
+                    inventory_content=inventory_content,
+                    is_temporary=True,
+                    created_by=user
+                )
+                inventory_id = temp_inventory.id
+                
+                # Log temporary inventory creation
+                SystemLog.objects.create(
+                    level='INFO',
+                    type='ANSIBLE',
+                    message=f'Temporary inventory created: {temp_name}',
+                    details=json.dumps({
+                        'inventory_id': str(temp_inventory.id),
+                        'execution_source': 'api',
+                        'content_length': len(inventory_content)
+                    }),
+                    user=user,
+                    object_type='AnsibleInventory',
+                    object_id=str(temp_inventory.id)
+                )
+            
+            # Get playbook and inventory
+            try:
+                playbook = AnsiblePlaybook.objects.get(id=data.get('playbook_id'))
+            except AnsiblePlaybook.DoesNotExist:
+                if temp_inventory:
+                    temp_inventory.soft_delete()
+                return Response(
+                    {'error': 'Playbook not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            try:
+                inventory = AnsibleInventory.objects.get(id=inventory_id, is_deleted=False)
+            except AnsibleInventory.DoesNotExist:
+                if temp_inventory:
+                    temp_inventory.soft_delete()
+                return Response(
+                    {'error': 'Inventory not found or has been deleted'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
             
             # Create Ansible execution record
             execution = AnsibleExecution.objects.create(
                 playbook=playbook,
                 inventory=inventory,
                 status='pending',
-                created_by=user
+                created_by=user,
+                execution_source='api'
             )
+            
+            # Store API and workflow variables
+            execution.set_api_request_variables(api_request_vars)
+            execution.set_workflow_trigger_variables(workflow_trigger_vars)
             
             # Set extra vars, tags, and skip tags
             if data.get('extra_vars_dict'):
@@ -476,18 +613,53 @@ class AnsibleExecutionViewSet(viewsets.ViewSet):
                 execution.set_skip_tags_list(data['skip_tags_list'])
             execution.save()
             
+            # Link temporary inventory to execution
+            if temp_inventory:
+                temp_inventory.parent_execution = execution
+                temp_inventory.save(update_fields=['parent_execution'])
+            
+            # Log execution start
+            SystemLog.objects.create(
+                level='INFO',
+                type='ANSIBLE',
+                message=f'Ansible execution started via API: {playbook.name}',
+                details=json.dumps({
+                    'execution_id': str(execution.id),
+                    'playbook': playbook.name,
+                    'inventory': inventory.name,
+                    'is_temporary_inventory': temp_inventory is not None,
+                    'api_variables_count': len(api_request_vars),
+                    'workflow_variables_count': len(workflow_trigger_vars)
+                }),
+                user=user,
+                object_type='AnsibleExecution',
+                object_id=str(execution.id)
+            )
+            
             # Start async task
             task = execute_ansible_playbook_task.delay(str(execution.id))
             
             return Response({
                 'execution_id': str(execution.id),
                 'task_id': task.id,
-                'message': 'Ansible playbook execution started'
+                'message': 'Ansible playbook execution started',
+                'temporary_inventory_created': temp_inventory is not None,
+                'api_variables_tracked': True
             }, status=status.HTTP_202_ACCEPTED)
             
         except AnsiblePlaybook.DoesNotExist:
-            return Response({'error': 'Playbook not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {'error': 'Playbook not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
         except AnsibleInventory.DoesNotExist:
-            return Response({'error': 'Inventory not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {'error': 'Inventory not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
         except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            logger.error(f"Execution error: {str(e)}")
+            return Response(
+                {'error': str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )

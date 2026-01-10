@@ -29,6 +29,7 @@ import AnsiblePlaybookEdit from './pages/AnsiblePlaybookEdit';
 import AnsibleInventoryCreate from './pages/AnsibleInventoryCreate';
 import AnsibleInventoryView from './pages/AnsibleInventoryView';
 import AnsibleInventoryEdit from './pages/AnsibleInventoryEdit';
+import AnsibleAutomationHelper from './pages/AnsibleAutomationHelper';
 
 // Context
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -110,6 +111,7 @@ function AppRoutes() {
         <Route path="/ansible-inventory-create" element={<AnsibleInventoryCreate />} />
         <Route path="/ansible-inventory-view/:id" element={<AnsibleInventoryView />} />
         <Route path="/ansible-inventory-edit/:id" element={<AnsibleInventoryEdit />} />
+        <Route path="/ansible-helper" element={<AnsibleAutomationHelper />} />
         <Route path="/executions" element={<Executions />} />
         <Route path="/executions/:id" element={<ExecutionDetail />} />
         <Route path="/ansible-execution-detail/:id" element={<ExecutionDetail />} />

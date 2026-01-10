@@ -127,6 +127,7 @@ def generic_automation_execute(request):
             name=f"Temp_Inventory_{device.name}_{int(time.time())}",
             description=f"Temporary inventory for device {device.name}",
             inventory_content=inventory_content,
+            is_temporary=True,  # Mark as temporary to hide from UI
             created_by=user
         )
         
