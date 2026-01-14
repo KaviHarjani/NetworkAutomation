@@ -508,6 +508,41 @@ def cleanup_old_executions():
 
 
 @shared_task
+def execute_ansible_playbook_on_device_task(
+    device_id, playbook_content, variables=None, tags=None, skip_tags=None
+):
+    """
+    Execute Ansible playbook on device in background
+    
+    Args:
+        device_id: Device ID
+        playbook_content: YAML content of the playbook
+        variables: Dictionary of extra variables (optional)
+        tags: List of tags to run (optional)
+        skip_tags: List of tags to skip (optional)
+        
+    Returns:
+        dict: Execution results
+    """
+    from .ansible_utils import execute_ansible_playbook_on_device_task as ansible_device_task
+    
+    try:
+        return ansible_device_task(
+            device_id=device_id,
+            playbook_content=playbook_content,
+            variables=variables,
+            tags=tags,
+            skip_tags=skip_tags
+        )
+    except Exception as e:
+        logger.error(f"Background Ansible device execution failed: {e}")
+        return {
+            'success': False,
+            'error': str(e)
+        }
+
+
+@shared_task
 def execute_ansible_playbook_task(execution_id):
     """Execute an Ansible playbook"""
     from .ansible_utils import execute_ansible_playbook_task as ansible_execute

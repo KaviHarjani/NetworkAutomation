@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeftIcon, PencilIcon, PlayIcon, DocumentDuplicateIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, PencilIcon, PlayIcon, DocumentDuplicateIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { ansibleAPI } from '../services/api';
 
@@ -10,6 +10,7 @@ const AnsiblePlaybookView = () => {
   const [playbook, setPlaybook] = useState(null);
   const [inventories, setInventories] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [selectedInventory, setSelectedInventory] = useState('');
 
   useEffect(() => {
@@ -53,6 +54,32 @@ const AnsiblePlaybookView = () => {
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text);
     toast.success('Copied to clipboard');
+  };
+
+  const handleExport = async () => {
+    if (!playbook) return;
+    
+    try {
+      setExporting(true);
+      const response = await ansibleAPI.exportPlaybook(id);
+      
+      // Create blob link to download
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `${playbook.name}.yml`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      
+      toast.success('Playbook exported successfully');
+    } catch (error) {
+      console.error('Export error:', error);
+      toast.error('Failed to export playbook');
+    } finally {
+      setExporting(false);
+    }
   };
 
   if (loading) {
@@ -133,13 +160,23 @@ const AnsiblePlaybookView = () => {
               <h1 className="text-3xl font-bold text-gray-900">{playbook.name}</h1>
               <p className="mt-1 text-gray-600">{playbook.description}</p>
             </div>
-            <button
-              onClick={() => navigate(`/ansible-playbook-edit/${id}`)}
-              className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-            >
-              <PencilIcon className="w-4 h-4 mr-2" />
-              Edit
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleExport}
+                disabled={exporting}
+                className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+              >
+                <ArrowDownTrayIcon className="w-4 h-4 mr-2" />
+                {exporting ? 'Exporting...' : 'Export YAML'}
+              </button>
+              <button
+                onClick={() => navigate(`/ansible-playbook-edit/${id}`)}
+                className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+              >
+                <PencilIcon className="w-4 h-4 mr-2" />
+                Edit
+              </button>
+            </div>
           </div>
         </div>
 

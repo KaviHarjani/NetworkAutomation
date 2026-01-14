@@ -1,0 +1,410 @@
+---
+- name: Precheck → Reboot → Postcheck Cisco N9K (Database Logging)
+  hosts: nxos
+  gather_facts: no
+  vars:
+    log_level: "INFO"
+    execution_id: "{{ ansible_host }}_{{ ansible_user }}_{ansible_date_now.epoch}}"
+    
+    check_commands:
+      - "show version"
+      - "show inventory"
+      - "show ip interface brief"
+      - "show ip route"
+      - "show route-map"
+      - "show logging"
+      - "show boot"
+      - "show version | begin Mode"
+      - "show spanning-tree summary"
+      - "show power inline"
+      - "show running-config"
+      - "show running-config | include boot"
+      - "show system"
+      - "show ip prefix-list"
+
+  tasks:
+
+  # --------------------------------------------------
+  # INITIALIZATION
+  # --------------------------------------------------
+  - name: Initialize execution tracking
+    set_fact:
+      precheck_results: {}
+      postcheck_results: {}
+      execution_start_time: "{{ ansible_date_now.epoch }}"
+      device_info: "{{ ansible_host }}_{{ inventory_hostname }}"
+    
+  - name: Log execution start to database
+    delegate_to: localhost
+    uri:
+      url: "http://localhost:8000/api/system-logs/"
+      method: "POST"
+      body_format: "json"
+      body:
+        level: "{{ log_level }}"
+        type: "WORKFLOW"
+        message: "Cisco N9K reboot workflow started: {{ device_info }}"
+        details: |
+          Device: {{ inventory_hostname }}
+          IP Address: {{ ansible_host }}
+          Commands to execute: {{ check_commands | length }}
+          Execution ID: {{ execution_id }}
+        object_type: "device_reboot"
+        object_id: "{{ device_info }}"
+      headers:
+        Content-Type: "application/json"
+    ignore_errors: yes
+    register: start_log_result
+
+  # --------------------------------------------------
+  # PRECHECK
+  # --------------------------------------------------
+  - name: Log precheck start to database
+    delegate_to: localhost
+    uri:
+      url: "http://localhost:8000/api/system-logs/"
+      method: "POST"
+      body_format: "json"
+      body:
+        level: "{{ log_level }}"
+        type: "WORKFLOW"
+        message: "Precheck phase started for {{ device_info }}"
+        details: |
+          Phase: PRECHECK
+          Commands count: {{ check_commands | length }}
+          Execution ID: {{ execution_id }}
+        object_type: "device_reboot"
+        object_id: "{{ device_info }}"
+      headers:
+        Content-Type: "application/json"
+    ignore_errors: yes
+
+  - name: Run PRECHECK commands
+    cisco.nxos.nxos_command:
+      commands: "{{ check_commands }}"
+    register: precheck_output
+    ignore_errors: no
+
+  - name: Process precheck results
+    set_fact:
+      precheck_results: "{{ precheck_results | combine({item.item: {'command': item.item, 'output': item.stdout, 'status': 'completed'}}) }}"
+    loop: "{{ precheck_output.results }}"
+
+  - name: Log precheck completion to database
+    delegate_to: localhost
+    uri:
+      url: "http://localhost:8000/api/system-logs/"
+      method: "POST"
+      body_format: "json"
+      body:
+        level: "{{ log_level }}"
+        type: "WORKFLOW"
+        message: "Precheck phase completed for {{ device_info }}"
+        details: |
+          Phase: PRECHECK
+          Commands executed: {{ precheck_output.results | length }}
+          Execution ID: {{ execution_id }}
+          Success: {{ precheck_output.failed | length == 0 }}
+        object_type: "device_reboot"
+        object_id: "{{ device_info }}"
+      headers:
+        Content-Type: "application/json"
+    ignore_errors: yes
+
+  - name: Save detailed precheck output to database
+    delegate_to: localhost
+    uri:
+      url: "http://localhost:8000/api/system-logs/"
+      method: "POST"
+      body_format: "json"
+      body:
+        level: "DEBUG"
+        type: "WORKFLOW"
+        message: "Precheck detailed output for {{ device_info }}"
+        details: |
+          Phase: PRECHECK - Detailed Output
+          Execution ID: {{ execution_id }}
+          
+          {% for cmd, out in check_commands | zip(precheck_output.stdout) %}
+          ---- {{ cmd }} ----
+          {{ out }}
+          
+          {% endfor %}
+        object_type: "device_reboot"
+        object_id: "{{ device_info }}"
+      headers:
+        Content-Type: "application/json"
+    ignore_errors: yes
+
+  # Check if precheck failed
+  - name: Fail if precheck commands failed
+    fail:
+      msg: "Precheck failed - aborting reboot procedure"
+    when: precheck_output.failed | length > 0
+
+  # --------------------------------------------------
+  # IMPLEMENTATION – REBOOT
+  # --------------------------------------------------
+  - name: Log reboot initiation to database
+    delegate_to: localhost
+    uri:
+      url: "http://localhost:8000/api/system-logs/"
+      method: "POST"
+      body_format: "json"
+      body:
+        level: "WARNING"
+        type: "WORKFLOW"
+        message: "Reboot initiated for {{ device_info }}"
+        details: |
+          Phase: IMPLEMENTATION
+          Action: Device Reboot
+          Execution ID: {{ execution_id }}
+          Reboot timeout: 900 seconds
+        object_type: "device_reboot"
+        object_id: "{{ device_info }}"
+      headers:
+        Content-Type: "application/json"
+    ignore_errors: yes
+
+  - name: Reboot Nexus device
+    cisco.nxos.nxos_reboot:
+      confirm: yes
+      reboot_timeout: 900
+      test_command: "show version"
+    register: reboot_result
+    ignore_errors: no
+
+  - name: Log reboot result to database
+    delegate_to: localhost
+    uri:
+      url: "http://localhost:8000/api/system-logs/"
+      method: "POST"
+      body_format: "json"
+      body:
+        level: "{{ 'ERROR' if reboot_result.failed else 'INFO' }}"
+        type: "WORKFLOW"
+        message: "Reboot command completed for {{ device_info }}"
+        details: |
+          Phase: IMPLEMENTATION
+          Result: {{ 'SUCCESS' if not reboot_result.failed else 'FAILED' }}
+          Execution ID: {{ execution_id }}
+          {% if reboot_result.failed %}
+          Error: {{ reboot_result.msg }}
+          {% endif %}
+        object_type: "device_reboot"
+        object_id: "{{ device_info }}"
+      headers:
+        Content-Type: "application/json"
+    ignore_errors: yes
+
+  # Fail if reboot command failed
+  - name: Fail if reboot command failed
+    fail:
+      msg: "Reboot command failed: {{ reboot_result.msg }}"
+    when: reboot_result.failed
+
+  # --------------------------------------------------
+  # REACHABILITY CHECK
+  # --------------------------------------------------
+  - name: Log reachability check start to database
+    delegate_to: localhost
+    uri:
+      url: "http://localhost:8000/api/system-logs/"
+      method: "POST"
+      body_format: "json"
+      body:
+        level: "{{ log_level }}"
+        type: "WORKFLOW"
+        message: "Reachability check started for {{ device_info }}"
+        details: |
+          Phase: REACHABILITY CHECK
+          Action: Ping monitoring
+          Execution ID: {{ execution_id }}
+          Wait time: 2 minutes
+          Retry attempts: 10
+        object_type: "device_reboot"
+        object_id: "{{ device_info }}"
+      headers:
+        Content-Type: "application/json"
+    ignore_errors: yes
+
+  - name: Wait 2 minutes before starting ping checks
+    pause:
+      minutes: 2
+
+  - name: Ping device every 2 minutes (10 attempts)
+    delegate_to: localhost
+    shell: |
+      ping -c 2 {{ ansible_host }}
+    register: ping_result
+    retries: 10
+    delay: 120
+    until: ping_result.rc == 0
+    ignore_errors: yes
+    loop_control:
+      pause: 2
+
+  - name: Log reachability result to database
+    delegate_to: localhost
+    uri:
+      url: "http://localhost:8000/api/system-logs/"
+      method: "POST"
+      body_format: "json"
+      body:
+        level: "{{ 'ERROR' if ping_result.failed else 'INFO' }}"
+        type: "WORKFLOW"
+        message: "Reachability check completed for {{ device_info }}"
+        details: |
+          Phase: REACHABILITY CHECK
+          Result: {{ 'REACHABLE' if not ping_result.failed else 'UNREACHABLE' }}
+          Execution ID: {{ execution_id }}
+          Attempts: {{ ping_result.attempt | default(1) }}/10
+        object_type: "device_reboot"
+        object_id: "{{ device_info }}"
+      headers:
+        Content-Type: "application/json"
+    ignore_errors: yes
+
+  - name: Fail if device is unreachable
+    fail:
+      msg: "Device did not come back after reboot"
+    when: ping_result.failed
+
+  # --------------------------------------------------
+  # POSTCHECK
+  # --------------------------------------------------
+  - name: Log postcheck start to database
+    delegate_to: localhost
+    uri:
+      url: "http://localhost:8000/api/system-logs/"
+      method: "POST"
+      body_format: "json"
+      body:
+        level: "{{ log_level }}"
+        type: "WORKFLOW"
+        message: "Postcheck phase started for {{ device_info }}"
+        details: |
+          Phase: POSTCHECK
+          Commands count: {{ check_commands | length }}
+          Execution ID: {{ execution_id }}
+        object_type: "device_reboot"
+        object_id: "{{ device_info }}"
+      headers:
+        Content-Type: "application/json"
+    ignore_errors: yes
+
+  - name: Run POSTCHECK commands
+    cisco.nxos.nxos_command:
+      commands: "{{ check_commands }}"
+    register: postcheck_output
+    ignore_errors: no
+
+  - name: Process postcheck results
+    set_fact:
+      postcheck_results: "{{ postcheck_results | combine({item.item: {'command': item.item, 'output': item.stdout, 'status': 'completed'}}) }}"
+    loop: "{{ postcheck_output.results }}"
+
+  - name: Log postcheck completion to database
+    delegate_to: localhost
+    uri:
+      url: "http://localhost:8000/api/system-logs/"
+      method: "POST"
+      body_format: "json"
+      body:
+        level: "{{ log_level }}"
+        type: "WORKFLOW"
+        message: "Postcheck phase completed for {{ device_info }}"
+        details: |
+          Phase: POSTCHECK
+          Commands executed: {{ postcheck_output.results | length }}
+          Execution ID: {{ execution_id }}
+          Success: {{ postcheck_output.failed | length == 0 }}
+        object_type: "device_reboot"
+        object_id: "{{ device_info }}"
+      headers:
+        Content-Type: "application/json"
+    ignore_errors: yes
+
+  - name: Save detailed postcheck output to database
+    delegate_to: localhost
+    uri:
+      url: "http://localhost:8000/api/system-logs/"
+      method: "POST"
+      body_format: "json"
+      body:
+        level: "DEBUG"
+        type: "WORKFLOW"
+        message: "Postcheck detailed output for {{ device_info }}"
+        details: |
+          Phase: POSTCHECK - Detailed Output
+          Execution ID: {{ execution_id }}
+          
+          {% for cmd, out in check_commands | zip(postcheck_output.stdout) %}
+          ---- {{ cmd }} ----
+          {{ out }}
+          
+          {% endfor %}
+        object_type: "device_reboot"
+        object_id: "{{ device_info }}"
+      headers:
+        Content-Type: "application/json"
+    ignore_errors: yes
+
+  # Check if postcheck failed
+  - name: Fail if postcheck commands failed
+    fail:
+      msg: "Postcheck failed - device may not be fully operational"
+    when: postcheck_output.failed | length > 0
+
+  # --------------------------------------------------
+  # COMPLETION
+  # --------------------------------------------------
+  - name: Calculate total execution time
+    set_fact:
+      total_execution_time: "{{ ansible_date_now.epoch | int - execution_start_time | int }}"
+
+  - name: Log workflow completion to database
+    delegate_to: localhost
+    uri:
+      url: "http://localhost:8000/api/system-logs/"
+      method: "POST"
+      body_format: "json"
+      body:
+        level: "INFO"
+        type: "WORKFLOW"
+        message: "Cisco N9K reboot workflow completed successfully: {{ device_info }}"
+        details: |
+          Phase: COMPLETION
+          Status: SUCCESS
+          Total execution time: {{ total_execution_time }} seconds
+          Execution ID: {{ execution_id }}
+          
+          Summary:
+          - Precheck: {{ precheck_output.failed | length == 0 | ternary('PASSED', 'FAILED') }}
+          - Reboot: SUCCESS
+          - Reachability: PASSED
+          - Postcheck: {{ postcheck_output.failed | length == 0 | ternary('PASSED', 'FAILED') }}
+          
+          Device is now operational after reboot.
+        object_type: "device_reboot"
+        object_id: "{{ device_info }}"
+      headers:
+        Content-Type: "application/json"
+    ignore_errors: yes
+
+  - name: Success message
+    debug:
+      msg: |
+        ✅ REBOOT COMPLETED SUCCESSFULLY
+        
+        Device: {{ inventory_hostname }} ({{ ansible_host }})
+        Execution ID: {{ execution_id }}
+        Total time: {{ total_execution_time }} seconds
+        
+        Phases completed:
+        ✅ Precheck - {{ precheck_output.failed | length == 0 | ternary('PASSED', 'FAILED') }}
+        ✅ Reboot - SUCCESS
+        ✅ Reachability - PASSED  
+        ✅ Postcheck - {{ postcheck_output.failed | length == 0 | ternary('PASSED', 'FAILED') }}
+        
+        All logs have been saved to the database and are available in the system logs.

@@ -13,6 +13,8 @@ import Executions from './pages/Executions';
 import ExecutionDetail from './pages/ExecutionDetail';
 import CreateDevice from './pages/CreateDevice';
 import CreateWorkflow from './pages/CreateWorkflow';
+import DeviceView from './pages/DeviceView';
+import DeviceEdit from './pages/DeviceEdit';
 import EnhancedCreateWorkflow from './pages/EnhancedCreateWorkflow';
 import ExecuteWorkflow from './pages/ExecuteWorkflow';
 import WorkflowView from './pages/WorkflowView';
@@ -27,6 +29,7 @@ import AnsiblePlaybookEdit from './pages/AnsiblePlaybookEdit';
 import AnsibleInventoryCreate from './pages/AnsibleInventoryCreate';
 import AnsibleInventoryView from './pages/AnsibleInventoryView';
 import AnsibleInventoryEdit from './pages/AnsibleInventoryEdit';
+import AnsibleAutomationHelper from './pages/AnsibleAutomationHelper';
 
 // Context
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -93,6 +96,8 @@ function AppRoutes() {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/devices" element={<Devices />} />
         <Route path="/devices/create" element={<CreateDevice />} />
+        <Route path="/devices/:id" element={<DeviceView />} />
+        <Route path="/devices/:id/edit" element={<DeviceEdit />} />
         <Route path="/workflows" element={<Workflows />} />
         <Route path="/workflows/create" element={<CreateWorkflow />} />
         <Route path="/workflows/create/enhanced" element={<EnhancedCreateWorkflow />} />
@@ -106,8 +111,10 @@ function AppRoutes() {
         <Route path="/ansible-inventory-create" element={<AnsibleInventoryCreate />} />
         <Route path="/ansible-inventory-view/:id" element={<AnsibleInventoryView />} />
         <Route path="/ansible-inventory-edit/:id" element={<AnsibleInventoryEdit />} />
+        <Route path="/ansible-helper" element={<AnsibleAutomationHelper />} />
         <Route path="/executions" element={<Executions />} />
         <Route path="/executions/:id" element={<ExecutionDetail />} />
+        <Route path="/ansible-execution-detail/:id" element={<ExecutionDetail />} />
         <Route path="/logs" element={<Logs />} />
         <Route path="/device-mapping" element={<DeviceMapping />} />
         <Route path="/webhooks" element={<WebhookConfigurations />} />

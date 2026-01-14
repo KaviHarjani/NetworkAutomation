@@ -4,10 +4,17 @@ Ansible utilities for executing playbooks and managing inventory
 import os
 import tempfile
 import subprocess
-import json
 import yaml
+import time
+import logging
+import glob
+from pathlib import Path
 from datetime import datetime
+from decouple import config
 from .models import AnsibleExecution
+
+# Set up logger
+logger = logging.getLogger(__name__)
 
 
 class AnsibleRunner:
@@ -53,6 +60,21 @@ class AnsibleRunner:
                     '--timeout', '30',
                 ]
                 
+                # Set up environment variables for Ansible network credentials
+                env_vars = os.environ.copy()
+                
+                # Pass Ansible network credentials using python-decouple (same as Django settings)
+                ansible_user = config('ANSIBLE_NET_USERNAME', default=None)
+                ansible_password = config('ANSIBLE_NET_PASSWORD', default=None)
+                ansible_auth_pass = config('ANSIBLE_NET_AUTH_PASS', default=None)
+                
+                if ansible_user and isinstance(ansible_user, str):
+                    env_vars['ANSIBLE_NET_USERNAME'] = ansible_user
+                if ansible_password and isinstance(ansible_password, str):
+                    env_vars['ANSIBLE_NET_PASSWORD'] = ansible_password
+                if ansible_auth_pass and isinstance(ansible_auth_pass, str):
+                    env_vars['ANSIBLE_NET_AUTH_PASS'] = ansible_auth_pass
+                
                 # Add tags if specified
                 if tags:
                     cmd.extend(['--tags', ','.join(tags)])
@@ -66,12 +88,13 @@ class AnsibleRunner:
                     for key, value in extra_vars.items():
                         cmd.extend(['-e', f'{key}={value}'])
                 
-                # Execute command
+                # Execute command with environment variables
                 result = subprocess.run(
                     cmd,
                     capture_output=True,
                     text=True,
-                    timeout=300  # 5 minute timeout
+                    timeout=300,  # 5 minute timeout
+                    env=env_vars  # Pass environment variables to Ansible
                 )
                 
                 end_time = datetime.now()
@@ -284,6 +307,134 @@ class AnsibleRunner:
             }
 
 
+
+def execute_ansible_playbook_on_device_task(
+    device_id, playbook_content, variables=None, tags=None, skip_tags=None
+):
+    """
+    Celery task to execute Ansible playbook on a device in background
+    
+    Args:
+        device_id: Device ID
+        playbook_content: YAML content of the Ansible playbook
+        variables: Dictionary of extra variables (optional)
+        tags: List of tags to run (optional)
+        skip_tags: List of tags to skip (optional)
+        
+    Returns:
+        dict: Execution results
+    """
+    from .models import Device, AnsibleExecution, AnsiblePlaybook, AnsibleInventory
+    from .webhook_utils import WebhookManager
+    from django.contrib.auth.models import User
+    import uuid
+    
+    # Set up logger for this function
+    task_logger = logging.getLogger('automation.ansible_utils')
+    
+    try:
+        # Get device from database
+        device = Device.objects.get(id=device_id)
+        
+        # Create temporary playbook and inventory objects for execution tracking
+        # These are temporary objects since we're executing directly on a device
+        temp_playbook = AnsiblePlaybook.objects.create(
+            name=f"Device_{device.name}_Temp_Playbook_{uuid.uuid4().hex[:8]}",
+            description=f"Temporary playbook for device {device.name}",
+            playbook_content=playbook_content,
+            created_by=User.objects.get_or_create(username='system')[0]
+        )
+        
+        temp_inventory = AnsibleInventory.objects.create(
+            name=f"Device_{device.name}_Temp_Inventory_{uuid.uuid4().hex[:8]}",
+            description=f"Temporary inventory for device {device.name}",
+            inventory_content=generate_device_inventory(device),
+            created_by=User.objects.get_or_create(username='system')[0]
+        )
+        
+        # Create AnsibleExecution record
+        execution_record = AnsibleExecution.objects.create(
+            playbook=temp_playbook,
+            inventory=temp_inventory,
+            status='running',
+            started_at=datetime.now(),
+            created_by=User.objects.get_or_create(username='system')[0]
+        )
+        
+        # Set extra vars and tags
+        if variables:
+            execution_record.set_extra_vars(variables)
+        if tags:
+            execution_record.set_tags_list(tags)
+        if skip_tags:
+            execution_record.set_skip_tags_list(skip_tags)
+        
+        execution_record.save()
+        
+        # Send webhook for execution started
+        try:
+            WebhookManager.send_ansible_webhook_notification(
+                execution_record, 'ansible_execution_started'
+            )
+        except Exception as e:
+            task_logger.warning(f"Failed to send ansible_execution_started webhook: {e}")
+        
+        # Execute playbook using the existing function
+        result = execute_ansible_playbook_on_device(
+            device=device,
+            playbook_content=playbook_content,
+            variables=variables,
+            tags=tags,
+            skip_tags=skip_tags
+        )
+        
+        # Update execution record with results
+        execution_record.status = 'completed' if result.get('success') else 'failed'
+        execution_record.completed_at = datetime.now()
+        execution_record.execution_time = result.get('execution_time', 0)
+        execution_record.stdout = result.get('result', '') if result.get('success') else ''
+        execution_record.stderr = result.get('error', '') if not result.get('success') else ''
+        execution_record.return_code = result.get('return_code', 1)
+        
+        execution_record.save()
+        
+        # Send webhook for completion
+        event_type = (
+            'ansible_execution_completed' if result.get('success') 
+            else 'ansible_execution_failed'
+        )
+        try:
+            WebhookManager.send_ansible_webhook_notification(
+                execution_record, event_type
+            )
+        except Exception as e:
+            task_logger.warning(f"Failed to send {event_type} webhook: {e}")
+        
+        # Clean up temporary objects (optional - you might want to keep them for auditing)
+        # temp_playbook.delete()
+        # temp_inventory.delete()
+        
+        return {
+            'success': True,
+            'execution_id': str(execution_record.id),
+            'task_id': f"device_{device_id}_{int(time.time())}",
+            'result': result
+        }
+        
+    except Device.DoesNotExist:
+        task_logger.error(f"Device with ID {device_id} not found")
+        return {
+            'success': False,
+            'error': f'Device with ID {device_id} not found'
+        }
+    except Exception as e:
+        task_logger.error(f"Background execution failed: {e}")
+        return {
+            'success': False,
+            'error': f'Background execution failed: {str(e)}'
+        }
+
+
 def execute_ansible_playbook_task(execution_id):
     """
     Celery task to execute Ansible playbook
@@ -427,6 +578,88 @@ def generate_device_inventory(device, group_name="network_devices"):
         )
 
 
+def generate_group_inventory(device_ids, group_name=None):
+    """
+    Generate Ansible inventory content from multiple device IDs
+    
+    Args:
+        device_ids: List of device UUIDs
+        group_name: Name of the host group (auto-generated if None)
+        
+    Returns:
+        str: Ansible inventory content in INI format
+    """
+    from .models import Device
+    
+    try:
+        devices = Device.objects.filter(id__in=device_ids)
+        
+        if not devices.exists():
+            raise Exception("No devices found with the provided IDs")
+        
+        # Auto-generate group name if not provided
+        if not group_name:
+            # Get common characteristics for group name
+            models = devices.values_list('model', flat=True).distinct()
+            vendors = devices.values_list('vendor', flat=True).distinct()
+            os_versions = devices.values_list('os_version', flat=True).distinct()
+            
+            # Create group name from common characteristics
+            model = models[0] if len(models) == 1 else "mixed"
+            vendor = vendors[0] if len(vendors) == 1 else "mixed"
+            os_version = os_versions[0] if len(os_versions) == 1 else "mixed"
+            
+            # Clean up group name (remove spaces, special chars)
+            group_name = f"{vendor}_{model}_{os_version}".replace(" ", "_").replace("/", "_").lower()
+            group_name = "".join(c for c in group_name if c.isalnum() or c == "_")
+        
+        # Build inventory content
+        inventory_lines = []
+        inventory_lines.append(f"[{group_name}]")
+        
+        # Add all devices to the group
+        for device in devices:
+            hostname = device.hostname or device.name
+            inventory_lines.append(
+                f"{hostname} ansible_host={device.ip_address} ansible_port={device.ssh_port}"
+            )
+        
+        inventory_lines.append("")
+        inventory_lines.append(f"[{group_name}:vars]")
+        
+        # Add group-level variables (common for all devices)
+        group_vars = {
+            'ansible_connection': 'network_cli',
+            'ansible_network_os': 'ios',  # Default, can be customized
+            'device_count': devices.count(),
+            'group_name': group_name
+        }
+        
+        for key, value in group_vars.items():
+            inventory_lines.append(f"{key}={value}")
+        
+        # Add device-specific variables section
+        inventory_lines.append("")
+        inventory_lines.append("# Device-specific variables")
+        
+        for device in devices:
+            hostname = device.hostname or device.name
+            inventory_lines.append(f"[{hostname}]")
+            inventory_lines.append(f"device_type={device.device_type}")
+            inventory_lines.append(f"device_vendor={device.vendor or 'unknown'}")
+            inventory_lines.append(f"device_model={device.model or 'unknown'}")
+            inventory_lines.append(f"device_name={device.name}")
+            inventory_lines.append(f"location={device.location or 'unknown'}")
+            inventory_lines.append("")
+        
+        return "\n".join(inventory_lines)
+        
+    except Exception as e:
+        raise Exception(
+            f"Failed to generate group inventory: {str(e)}"
+        )
+
+
 def execute_ansible_playbook_on_device(
     device, playbook_content, variables=None, tags=None, skip_tags=None
 ):
@@ -456,8 +689,24 @@ def execute_ansible_playbook_on_device(
             'device_vendor': device.vendor or "unknown"
         }
         
-        # Merge with provided variables
-        final_variables = {**default_variables, **(variables or {})}
+        # Add Ansible network credentials from environment variables if available
+        # These will be overridden if provided in the variables parameter
+        env_credentials = {}
+        
+        # Get credentials using python-decouple (same as Django settings)
+        ansible_user = config('ANSIBLE_NET_USERNAME', default=None)
+        ansible_password = config('ANSIBLE_NET_PASSWORD', default=None)
+        ansible_auth_pass = config('ANSIBLE_NET_AUTH_PASS', default=None)
+        
+        if ansible_user and isinstance(ansible_user, str):
+            env_credentials['ansible_user'] = ansible_user
+        if ansible_password and isinstance(ansible_password, str):
+            env_credentials['ansible_password'] = ansible_password
+        if ansible_auth_pass and isinstance(ansible_auth_pass, str):
+            env_credentials['ansible_become_password'] = ansible_auth_pass
+        
+        # Merge with provided variables (provided variables override environment)
+        final_variables = {**default_variables, **env_credentials, **(variables or {})}
         
         # Validate playbook content
         validation_result = validate_ansible_playbook_content(playbook_content)
@@ -516,3 +765,225 @@ def execute_ansible_playbook_on_device(
                 'ip_address': device.ip_address if device else 'unknown'
             }
         }
+
+
+# =============================================================================
+# Auto-Discovery Functions for Ansible Playbooks
+# =============================================================================
+
+
+def get_playbooks_directory():
+    """
+    Get the path to the ansible_playbooks directory
+    
+    Returns:
+        str: Path to the playbook directory
+    """
+    # Try to find the playbook directory relative to the project root
+    project_root = Path(__file__).resolve().parent.parent
+    playbook_dir = project_root / 'ansible_playbooks'
+    
+    # Also check current working directory
+    cwd_playbooks = Path.cwd() / 'ansible_playbooks'
+    if cwd_playbooks.exists():
+        return str(cwd_playbooks)
+    
+    return str(playbook_dir)
+
+
+def scan_playbook_directory(playbook_dir=None):
+    """
+    Scan the playbook directory and return a list of playbook files
+    
+    Args:
+        playbook_dir: Optional path to playbook directory (uses default if None)
+    
+    Returns:
+        list: List of playbook file paths
+    """
+    if playbook_dir is None:
+        playbook_dir = get_playbooks_directory()
+    
+    playbook_files = []
+    
+    if os.path.exists(playbook_dir):
+        # Recursively find all .yml and .yaml files
+        for ext in ['*.yml', '*.yaml']:
+            pattern = os.path.join(playbook_dir, '**', ext)
+            playbook_files.extend(glob.glob(pattern, recursive=True))
+    
+    return sorted(playbook_files)
+
+
+def read_playbook_file(file_path):
+    """
+    Read and parse a playbook file
+    
+    Args:
+        file_path: Path to the playbook file
+    
+    Returns:
+        dict: Playbook information including content and metadata
+    """
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # Parse YAML to extract metadata
+        playbook_data = yaml.safe_load(content) if content.strip() else {}
+        
+        if not isinstance(playbook_data, list):
+            playbook_data = [playbook_data] if playbook_data else []
+        
+        # Extract play names and description
+        play_names = []
+        description = ""
+        for play in playbook_data:
+            if isinstance(play, dict):
+                if 'name' in play:
+                    play_names.append(play['name'])
+        
+        if play_names:
+            description = ", ".join(play_names[:3])  # First 3 plays as description
+            if len(play_names) > 3:
+                description += "..."
+        
+        return {
+            'valid': True,
+            'file_path': file_path,
+            'file_name': os.path.basename(file_path),
+            'content': content,
+            'description': description or "Auto-discovered playbook",
+            'play_count': len(playbook_data),
+            'plays': play_names,
+            'error': None
+        }
+    except Exception as e:
+        return {
+            'valid': False,
+            'file_path': file_path,
+            'file_name': os.path.basename(file_path),
+            'content': '',
+            'description': '',
+            'play_count': 0,
+            'plays': [],
+            'error': str(e)
+        }
+
+
+def discover_playbooks(playbook_dir=None):
+    """
+    Discover all playbooks in the playbook directory
+    
+    Args:
+        playbook_dir: Optional path to playbook directory (uses default if None)
+    
+    Returns:
+        dict: Discovery results with valid and invalid playbooks
+    """
+    playbook_files = scan_playbook_directory(playbook_dir)
+    
+    valid_playbooks = []
+    invalid_playbooks = []
+    
+    for file_path in playbook_files:
+        result = read_playbook_file(file_path)
+        if result['valid']:
+            valid_playbooks.append(result)
+        else:
+            invalid_playbooks.append(result)
+    
+    return {
+        'total_files': len(playbook_files),
+        'valid_count': len(valid_playbooks),
+        'invalid_count': len(invalid_playbooks),
+        'valid_playbooks': valid_playbooks,
+        'invalid_playbooks': invalid_playbooks,
+        'directory': playbook_dir or get_playbooks_directory()
+    }
+
+
+def import_playbook_to_database(playbook_info, created_by=None):
+    """
+    Import a discovered playbook into the database
+    
+    Args:
+        playbook_info: Playbook info dict from discover_playbooks
+        created_by: User instance (optional, defaults to system user)
+    
+    Returns:
+        AnsiblePlaybook: The created or updated playbook instance
+    """
+    from .models import AnsiblePlaybook
+    from django.contrib.auth.models import User
+    
+    playbook_name = playbook_info['file_name'].replace('.yml', '').replace('.yaml', '')
+    
+    # Get or create system user if no user provided
+    if created_by is None:
+        created_by, _ = User.objects.get_or_create(
+            username='system',
+            defaults={'email': 'system@localhost'}
+        )
+    
+    # Check if playbook already exists by name
+    playbook, created = AnsiblePlaybook.objects.get_or_create(
+        name=playbook_name,
+        defaults={
+            'description': playbook_info['description'],
+            'playbook_content': playbook_info['content'],
+            'created_by': created_by
+        }
+    )
+    
+    if not created:
+        # Update existing playbook
+        playbook.description = playbook_info['description']
+        playbook.playbook_content = playbook_info['content']
+        playbook.save()
+    
+    return playbook
+
+
+def auto_discover_and_import_playbooks(playbook_dir=None, created_by=None):
+    """
+    Auto-discover playbooks from filesystem and import to database
+    
+    Args:
+        playbook_dir: Optional path to playbook directory (uses default if None)
+        created_by: User instance (optional, defaults to system user)
+    
+    Returns:
+        dict: Import results
+    """
+    from .models import AnsiblePlaybook
+    
+    discovery = discover_playbooks(playbook_dir)
+    
+    imported = []
+    updated = []
+    skipped = []
+    errors = []
+    
+    for playbook_info in discovery['valid_playbooks']:
+        try:
+            playbook = import_playbook_to_database(playbook_info, created_by)
+            # Check if it's new or updated
+            if AnsiblePlaybook.objects.filter(name=playbook.name, created_at__gte=playbook.created_at - __import__('datetime').timedelta(seconds=1)).exists():
+                updated.append(playbook.name)
+            else:
+                imported.append(playbook.name)
+        except Exception as e:
+            errors.append({
+                'playbook': playbook_info['file_name'],
+                'error': str(e)
+            })
+    
+    return {
+        'discovered': discovery['valid_count'],
+        'imported': len(imported),
+        'updated': len(updated),
+        'skipped': len(skipped),
+        'errors': errors,
+        'invalid_playbooks': discovery['invalid_playbooks']
+    }

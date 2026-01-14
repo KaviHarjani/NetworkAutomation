@@ -137,9 +137,9 @@ REDIS_URL = config('REDIS_URL', default='redis://localhost:6379/0')
 
 # Celery Configuration
 CELERY_BROKER_URL = config('CELERY_BROKER_URL',
-                           default='redis://localhost:6379/0')
+                           default='sqla+sqlite:///celery_broker.sqlite3')
 CELERY_RESULT_BACKEND = config('CELERY_RESULT_BACKEND',
-                               default='redis://localhost:6379/0')
+                               default='db+sqlite:///celery_results.sqlite3')
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
