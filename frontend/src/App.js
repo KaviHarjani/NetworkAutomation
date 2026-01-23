@@ -30,6 +30,12 @@ import AnsibleInventoryCreate from './pages/AnsibleInventoryCreate';
 import AnsibleInventoryView from './pages/AnsibleInventoryView';
 import AnsibleInventoryEdit from './pages/AnsibleInventoryEdit';
 import AnsibleAutomationHelper from './pages/AnsibleAutomationHelper';
+import ChefCookbookView from './pages/ChefCookbookView';
+import ChefCookbookCreate from './pages/ChefCookbookCreate';
+import ChefCookbookEdit from './pages/ChefCookbookEdit';
+import ChefRecipeView from './pages/ChefRecipeView';
+import ChefWorkflows from './pages/ChefWorkflows';
+import ApprovalManagement from './pages/ApprovalManagement';
 
 // Context
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -112,12 +118,18 @@ function AppRoutes() {
         <Route path="/ansible-inventory-view/:id" element={<AnsibleInventoryView />} />
         <Route path="/ansible-inventory-edit/:id" element={<AnsibleInventoryEdit />} />
         <Route path="/ansible-helper" element={<AnsibleAutomationHelper />} />
+        <Route path="/chef-workflows" element={<ChefWorkflows />} />
+        <Route path="/chef-cookbook-create" element={<ChefCookbookCreate />} />
+        <Route path="/chef-cookbook-view/:id" element={<ChefCookbookView />} />
+        <Route path="/chef-cookbook-edit/:id" element={<ChefCookbookEdit />} />
+        <Route path="/chef-recipe-view/:id" element={<ChefRecipeView />} />
         <Route path="/executions" element={<Executions />} />
         <Route path="/executions/:id" element={<ExecutionDetail />} />
         <Route path="/ansible-execution-detail/:id" element={<ExecutionDetail />} />
         <Route path="/logs" element={<Logs />} />
         <Route path="/device-mapping" element={<DeviceMapping />} />
         <Route path="/webhooks" element={<WebhookConfigurations />} />
+        <Route path="/approval-management" element={<ApprovalManagement />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </Layout>

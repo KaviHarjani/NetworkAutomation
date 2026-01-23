@@ -29,6 +29,7 @@ const Layout = ({ children }) => {
     { name: 'Workflows', href: '/workflows', icon: Cog6ToothIcon },
     { name: 'Ansible Workflows', href: '/ansible-workflows', icon: CodeBracketIcon },
     { name: 'Ansible Helper', href: '/ansible-helper', icon: BookOpenIcon },
+    { name: 'Chef Workflows', href: '/chef-workflows', icon: CodeBracketIcon },
     { name: 'Executions', href: '/executions', icon: PlayIcon },
     { name: 'Device Mapping', href: '/device-mapping', icon: RectangleStackIcon },
     { name: 'Logs', href: '/logs', icon: DocumentTextIcon },

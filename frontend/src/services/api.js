@@ -402,4 +402,65 @@ export const ansibleAPI = {
     api.get('/api/ansible-playbooks/directory_info/'),
 };
 
+// Chef API
+export const chefAPI = {
+  // Cookbook operations
+  getCookbooks: (params = {}) =>
+    api.get('/api/chef-cookbooks/', { params }),
+
+  createCookbook: (cookbookData) =>
+    api.post('/api/chef-cookbooks/', cookbookData),
+
+  updateCookbook: (cookbookId, cookbookData) =>
+    api.put(`/api/chef-cookbooks/${cookbookId}/`, cookbookData),
+
+  deleteCookbook: (cookbookId) =>
+    api.delete(`/api/chef-cookbooks/${cookbookId}/`),
+
+  getCookbook: (cookbookId) =>
+    api.get(`/api/chef-cookbooks/${cookbookId}/`),
+
+  validateCookbook: (cookbookContent) =>
+    api.post('/api/chef-cookbooks/validate/', { cookbook_content: cookbookContent }),
+
+  // Recipe operations
+  getRecipes: (params = {}) =>
+    api.get('/api/chef-recipes/', { params }),
+
+  createRecipe: (recipeData) =>
+    api.post('/api/chef-recipes/', recipeData),
+
+  updateRecipe: (recipeId, recipeData) =>
+    api.put(`/api/chef-recipes/${recipeId}/`, recipeData),
+
+  deleteRecipe: (recipeId) =>
+    api.delete(`/api/chef-recipes/${recipeId}/`),
+
+  getRecipe: (recipeId) =>
+    api.get(`/api/chef-recipes/${recipeId}/`),
+
+  validateRecipe: (recipeContent) =>
+    api.post('/api/chef-recipes/validate/', { recipe_content: recipeContent }),
+
+  // Execution operations
+  getExecutions: (params = {}) =>
+    api.get('/api/chef-executions/', { params }),
+
+  getExecution: (executionId) =>
+    api.get(`/api/chef-executions/${executionId}/`),
+
+  executeCookbook: (executionData) =>
+    api.post('/api/chef-executions/execute/', executionData),
+
+  // Auto-discovery operations
+  discoverCookbooks: (directory = null) =>
+    api.get('/api/chef-cookbooks/discover/', { params: { directory } }),
+
+  importCookbooks: (directory = null) =>
+    api.post('/api/chef-cookbooks/import_cookbooks/', { directory }),
+
+  getCookbookDirectory: () =>
+    api.get('/api/chef-cookbooks/directory_info/'),
+};
+
 export default api;
